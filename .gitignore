@@ -1,0 +1,5 @@
+# Sqlite DB
+*.db
+
+# Keys
+*.pem
