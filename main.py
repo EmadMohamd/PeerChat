@@ -1,7 +1,7 @@
 import sys
 import threading
 import time
-
+import config
 from network.server import (
     start_server,
     receive_loop
@@ -49,15 +49,16 @@ def start_network(port):
 
 if __name__ == "__main__":
 
-    if len(sys.argv) < 2:
+    if len(sys.argv) < 3:
 
         print("Usage:")
-        print("python main.py <port>")
+        print("python main.py <port> <peer id>")
 
         sys.exit()
 
     MY_PORT = int(sys.argv[1])
-
+    config.PEER_ID = sys.argv[2]
+    print("MAIN PEER_ID:", config.PEER_ID)
     ensure_keys_exist()
     init_client_keys()
 

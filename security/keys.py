@@ -1,10 +1,15 @@
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 import os
+import config
+from pathlib import Path
 
+BASE_DIR = Path(__file__).resolve().parent.parent
+def private_key_file():
+    return BASE_DIR / "keys" / f"private{config.PEER_ID}.pem"
 
-PRIVATE_KEY_FILE = "private.pem"
-PUBLIC_KEY_FILE = "public.pem"
+def public_key_file():
+    return BASE_DIR / "keys" / f"public{config.PEER_ID}.pem"
 
 
 def generate_keys():
@@ -21,7 +26,7 @@ def generate_keys():
 
 def save_keys(private_key, public_key):
 
-    with open(PRIVATE_KEY_FILE, "wb") as f:
+    with open(private_key_file(), "wb") as f:
 
         f.write(
             private_key.private_bytes(
@@ -31,7 +36,7 @@ def save_keys(private_key, public_key):
             )
         )
 
-    with open(PUBLIC_KEY_FILE, "wb") as f:
+    with open(public_key_file(), "wb") as f:
 
         f.write(
             public_key.public_bytes(
@@ -43,7 +48,7 @@ def save_keys(private_key, public_key):
 
 def load_private_key():
 
-    with open(PRIVATE_KEY_FILE, "rb") as f:
+    with open(private_key_file(), "rb") as f:
 
         return serialization.load_pem_private_key(
             f.read(),
@@ -53,7 +58,7 @@ def load_private_key():
 
 def load_public_key():
 
-    with open(PUBLIC_KEY_FILE, "rb") as f:
+    with open(public_key_file(), "rb") as f:
 
         return serialization.load_pem_public_key(
             f.read()
@@ -77,7 +82,7 @@ def pem_to_public_key(pem_data):
 
 def ensure_keys_exist():
 
-    if not os.path.exists(PRIVATE_KEY_FILE):
+    if not os.path.exists(private_key_file()):
 
         private_key, public_key = generate_keys()
 

@@ -1,16 +1,14 @@
 # PeerChat — Secure Decentralized P2P Messaging System
 
-PeerChat is a decentralized peer-to-peer messaging platform written in Python.
-Each node acts as both a client and server, enabling direct encrypted communication without relying on a centralized backend.
+PeerChat is a decentralized peer-to-peer messaging platform written in Python. Each node acts as both a client and server, enabling direct encrypted communication without relying on a centralized backend.
 
 The system now supports:
 
-* automatic peer discovery
-* dynamic network expansion
-* RSA public/private key authentication
-* decentralized messaging
-* local message persistence
-* PyQt6 graphical interface
+* **Context-Aware Filtering:** Private messages are isolated from Global Chat via a dual-pane UI.
+* **Automatic Peer Discovery:** Dynamic network expansion through bootstrap peers.
+* **RSA Identity Verification:** Secure challenge-response authentication.
+* **Modernized GUI:** Polished PyQt6 interface with dark mode and sidebar navigation.
+* **Local Persistence:** Message history stored via SQLite.
 
 ---
 
@@ -18,44 +16,28 @@ The system now supports:
 
 ## Networking
 
-* Fully decentralized peer-to-peer architecture
-* TCP socket communication
-* Automatic peer discovery through bootstrap peers
-* Dynamic peer list exchange
-* Auto-connect to newly discovered peers
-* Multi-peer simultaneous communication
-* Continuous receive loops for real-time messaging
-
----
+* Fully decentralized peer-to-peer architecture.
+* TCP socket communication with newline-delimited JSON streaming.
+* Automatic peer discovery through bootstrap peers and dynamic peer list exchange.
+* Multi-peer simultaneous communication with continuous receive loops.
 
 ## Security
 
-* RSA public/private key authentication
-* Challenge-response identity verification
-* Cryptographic peer authentication
-* No password transmission
-* Replay-resistant authentication flow
-* Foundation for future AES encrypted messaging
-
----
+* **RSA Public/Private Keys:** Identity proven via cryptographic signatures.
+* **Challenge-Response Flow:** Prevents identity spoofing without ever transmitting private keys or passwords.
+* **Key Isolation:** All sensitive `.pem` files are stored in a dedicated `keys/` directory.
 
 ## Messaging
 
-* Direct peer messaging
-* Broadcast messaging to connected peers
-* JSON packet protocol
-* Local SQLite message history
-* Real-time message propagation
-
----
+* **Direct Private Messaging:** Target specific peers for 1-on-1 filtered conversations.
+* **Global Broadcast:** Message all connected peers in the swarm.
+* **JSON Packet Protocol:** Structured communication for identity, challenges, and chat.
 
 ## GUI
 
-* Modern PyQt6 interface
-* Real-time chat updates
-* Thread-safe UI event system
-* Multi-window peer instances
-* Extensible architecture for tabs/groups/files
+* **Modern PyQt6 Interface:** Sidebar for peer selection and a sleek dark-themed chat area.
+* **Identity Header:** Clear display of "Peer Chat" title and your unique Peer ID at the top right.
+* **Contextual History:** Automatic message sorting based on the selected peer in the sidebar.
 
 ---
 
@@ -67,27 +49,25 @@ The system now supports:
                 └──────┬────────┘
                        │
          ┌─────────────┼─────────────┐
-         │                             │
+         │                           │
 ┌────────▼────────┐         ┌────────▼────────┐
 │    Peer B       │         │    Peer C       │
 └────────┬────────┘         └────────┬────────┘
-         │                             │
+         │                           │
          └─────────────┬─────────────┘
                        │
                 ┌──────▼────────┐
                 │    Peer D     │
                 └───────────────┘
+
 ```
 
 Each peer contains:
 
-* Listener Server
-* Outgoing Client Connector
-* Message Handler
-* Peer Discovery Engine
-* Authentication Layer
-* Local Database
-* GUI Frontend
+* Listener Server & Outgoing Client Connector
+* Message Handler & Peer Discovery Engine
+* Authentication Layer (RSA)
+* Local SQLite Database & Modern PyQt6 Frontend
 
 ---
 
@@ -98,7 +78,7 @@ PeerChat uses cryptographic authentication instead of passwords.
 ```text
 Connect
    ↓
-Exchange public keys
+Exchange public keys (Identity Packet)
    ↓
 Generate random challenge
    ↓
@@ -107,49 +87,28 @@ Sign challenge with private key
 Verify signature using public key
    ↓
 Authenticated communication begins
+
 ```
-
-This ensures peers can prove identity without transmitting secrets.
-
----
-
-# Peer Discovery Flow
-
-The network expands dynamically.
-
-```text
-Bootstrap Peer
-      ↓
-Request peer list
-      ↓
-Receive discovered peers
-      ↓
-Auto-connect
-      ↓
-Expand network graph
-```
-
-Peers continuously exchange known peer information, allowing decentralized discovery similar to distributed systems and overlay networks.
 
 ---
 
 # Message Protocol
 
-Messages use JSON packets.
-
-## Chat Packet
+## Chat Packet (Direct/Global)
 
 ```json
 {
     "type": "chat",
     "data": {
-        "sender": "peer_001",
-        "message": "Hello world"
+        "sender": "5001",
+        "recipient": "5002", 
+        "message": "Hello!"
     }
 }
+
 ```
 
----
+*If `recipient` is null, the message is treated as Global.*
 
 ## Identity Packet
 
@@ -157,37 +116,11 @@ Messages use JSON packets.
 {
     "type": "identity",
     "data": {
-        "peer_id": "peer_001",
-        "public_key": "PEM_PUBLIC_KEY"
+        "peer_id": "5001",
+        "public_key": "PEM_STRING"
     }
 }
-```
 
----
-
-## Challenge Packet
-
-```json
-{
-    "type": "challenge",
-    "data": {
-        "challenge": "ABCD1234"
-    }
-}
-```
-
----
-
-## Peer Discovery Packet
-
-```json
-{
-    "type": "peer_response",
-    "data": [
-        ["127.0.0.1", 5001],
-        ["127.0.0.1", 5002]
-    ]
-}
 ```
 
 ---
@@ -198,34 +131,30 @@ Messages use JSON packets.
 peerchat/
 │
 ├── main.py
+├── config.py           # Local settings (Peer ID, Ports)
+│
+├── keys/               # Secure storage for RSA keys
+│   ├── private.pem
+│   └── public.pem
 │
 ├── gui/
-│   ├── __init__.py
-│   ├── app.py
-│   ├── chat_window.py
-│   └── signals.py
+│   ├── app.py          # GUI Launcher
+│   ├── chat_window.py  # Filtered UI logic & Context Switching
+│   └── signals.py      # Event bus
 │
 ├── network/
-│   ├── __init__.py
-│   ├── protocol.py
-│   ├── server.py
-│   ├── client.py
-│   └── discovery.py
+│   ├── protocol.py     # Packet creation/parsing
+│   ├── server.py       # Handshake & Routing
+│   ├── client.py       # Connection logic
+│   └── discovery.py    # Global peer registry
 │
 ├── security/
-│   ├── __init__.py
-│   ├── keys.py
-│   └── crypto.py
+│   ├── keys.py         # Key management & folder logic
+│   └── crypto.py       # Signing/Verification
 │
-├── storage/
-│   ├── __init__.py
-│   └── database.py
-│
-├── private.pem
-├── public.pem
-│
-├── requirements.txt
-└── README.md
+└── storage/
+    └── database.py     # SQLite history
+
 ```
 
 ---
@@ -234,179 +163,51 @@ peerchat/
 
 ## `network/`
 
-Handles all socket communication, peer discovery, packet parsing, and connection management.
+Handles all socket communication, peer discovery, and packet parsing.
 
-### Components
-
-* `server.py` → incoming connections + packet handling
-* `client.py` → outgoing connections + messaging
-* `protocol.py` → JSON packet creation/parsing
-* `discovery.py` → peer registry and bootstrap discovery
-
----
+* `server.py`: Incoming connections, handshake verification, and message routing.
+* `client.py`: Outgoing connections and packet transmission.
+* `discovery.py`: Maintains the list of authenticated `peer_ids` for the GUI.
 
 ## `security/`
 
-Handles cryptographic authentication.
+Handles cryptographic tasks.
 
-### Components
-
-* `keys.py` → RSA key generation/loading
-* `crypto.py` → signing and signature verification
-
----
-
-## `storage/`
-
-Handles local message persistence using SQLite.
-
----
-
-## `gui/`
-
-PyQt6 graphical frontend.
-
-### Components
-
-* `app.py` → GUI launcher
-* `chat_window.py` → chat interface
-* `signals.py` → thread-safe event communication
-
----
-
-# Installation
-
-## Clone Repository
-
-```bash
-git clone <repository-url>
-cd peerchat
-```
-
----
-
-## Install Dependencies
-
-```bash
-pip install -r requirements.txt
-```
-
-Or manually:
-
-```bash
-pip install pyqt6 cryptography
-```
+* `keys.py`: RSA key generation and directory enforcement (`/keys`).
+* `crypto.py`: Signature creation and verification.
 
 ---
 
 # Running PeerChat
 
-Run multiple peers on different ports.
-
----
-
-## Terminal 1
+## Install Dependencies
 
 ```bash
-python main.py 5000
+pip install pyqt6 cryptography
+
 ```
 
----
+## Running Multiple Instances
 
-## Terminal 2
+Run each peer in a new terminal window:
 
-```bash
-python main.py 5001
-```
+**Terminal 1:** `python main.py 5000 <PEER ID>`
 
----
+**Terminal 2:** `python main.py 5001 <PEER ID>`
 
-## Terminal 3
-
-```bash
-python main.py 5002
-```
-
-Each peer automatically:
-
-* generates RSA keys
-* starts listening server
-* connects to bootstrap peers
-* exchanges peer lists
-* authenticates peers
-* launches GUI
-
----
-
-# Current Capabilities
-
-* Decentralized networking
-* Dynamic peer discovery
-* Public/private key authentication
-* Automatic network expansion
-* Local message history
-* Real-time GUI messaging
-* Multi-peer communication
+**Terminal 3:** `python main.py 5002 <PEER ID>`
 
 ---
 
 # Planned Improvements
 
-## Networking
-
-* NAT traversal
-* UDP hole punching
-* Distributed hash table (DHT)
-* Asyncio networking
-* Advanced routing
-
----
-
-## Security
-
-* AES-GCM encrypted messaging
-* Session key negotiation
-* Perfect forward secrecy
-* Peer trust management
-
----
-
-## GUI
-
-* Chat tabs
-* Online peer list
-* File transfer UI
-* Notifications
-* Message bubbles
-* Themes
-
----
-
-## Messaging
-
-* Group chats
-* Media/file sharing
-* Voice/video calls
-* Typing indicators
-* Emoji/stickers
-
----
-
-# Recommended Future Stack
-
-| Purpose         | Technology   |
-| --------------- | ------------ |
-| GUI             | PyQt6        |
-| Networking      | asyncio      |
-| Encryption      | cryptography |
-| Database        | SQLite       |
-| NAT Traversal   | aiortc       |
-| Large-scale P2P | libp2p       |
+* **E2EE Messaging:** Encrypting message payloads with RSA Public Keys/AES-GCM.
+* **NAT Traversal:** UDP hole punching and STUN support for over-the-internet P2P.
+* **Advanced UI:** Unread message indicators, file transfer progress bars, and custom themes.
+* **DHT Integration:** Kademlia-based distributed hash table for decentralized node discovery at scale.
 
 ---
 
 # License
 
-This project is licensed under the MIT License.
-
-See the `LICENSE` file for details.
+MIT License. See `LICENSE` for details.

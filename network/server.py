@@ -1,216 +1,144 @@
 import socket
 import threading
 import secrets
+import config
 
-from network.protocol import (
-    parse_packet,
-    create_packet
-)
-
+from network.protocol import parse_packet, create_packet
 from network.discover import (
     known_peers,
     connected_peers,
     authenticated_peers,
     peer_public_keys,
-    pending_challenges
+    pending_challenges,
+    peer_ids  # Ensure this is in your discover.py
 )
-
 from storage.database import save_message
-
 from security.keys import pem_to_public_key
-
 from security.crypto import verify_signature
 
 HOST = "127.0.0.1"
 
 
 def receive_loop(conn):
+    # makefile('rb') creates a file-like object to read line-by-line
+    # This is critical for parsing newline-delimited JSON
+    f = conn.makefile('rb')
 
     while True:
-
         try:
-
-            data = conn.recv(4096)
-
-            if not data:
+            line = f.readline()
+            if not line:
                 break
 
-            packet = parse_packet(data)
-
-            packet_type = packet["type"]
+            packet = parse_packet(line)
+            p_type = packet["type"]
+            p_data = packet["data"]
 
             # =========================
-            # IDENTITY
+            # 1. IDENTITY (The Handshake)
             # =========================
+            if p_type == "identity":
+                peer_id = p_data["peer_id"]
+                pub_key = pem_to_public_key(p_data["public_key"])
 
-            if packet_type == "identity":
+                # Link the socket to the Peer's Name for the GUI sidebar
+                peer_ids[conn] = peer_id
+                peer_public_keys[conn] = pub_key
 
-                peer_id = packet["data"]["peer_id"]
-
-                public_key_pem = packet["data"]["public_key"]
-
-                public_key = pem_to_public_key(
-                    public_key_pem
-                )
-
-                peer_public_keys[conn] = public_key
-
+                # Prepare a random challenge for the peer to sign
                 challenge = secrets.token_hex(16)
-
                 pending_challenges[conn] = challenge
 
-                response = create_packet(
-                    "challenge",
-                    {
-                        "challenge": challenge
-                    }
-                )
-
-                conn.send(response)
+                conn.send(create_packet("challenge", {"challenge": challenge}))
 
             # =========================
-            # CHALLENGE RESPONSE
+            # 2. CHALLENGE RESPONSE
             # =========================
+            elif p_type == "challenge_response":
+                signature = bytes.fromhex(p_data["signature"])
+                challenge = pending_challenges.get(conn)
+                public_key = peer_public_keys.get(conn)
 
-            elif packet_type == "challenge_response":
-
-                signature = bytes.fromhex(
-                    packet["data"]["signature"]
-                )
-
-                challenge = pending_challenges[conn]
-
-                public_key = peer_public_keys[conn]
-
-                valid = verify_signature(
-                    public_key,
-                    challenge,
-                    signature
-                )
-
-                if valid:
-
+                if challenge and public_key and verify_signature(public_key, challenge, signature):
                     authenticated_peers.add(conn)
-
-                    print("[AUTHENTICATED]")
-
+                    print(f"[AUTHENTICATED] {peer_ids.get(conn)} is verified.")
                 else:
-
-                    print("[AUTH FAILED]")
-
-                    conn.close()
+                    print("[AUTH FAILED] Closing connection.")
+                    break
 
             # =========================
-            # CHALLENGE
+            # 3. CHALLENGE (Peer challenging US)
             # =========================
-
-            elif packet_type == "challenge":
-
+            elif p_type == "challenge":
                 from network.client import handle_challenge
-
-                challenge = packet["data"]["challenge"]
-
-                handle_challenge(conn, challenge)
+                handle_challenge(conn, p_data["challenge"])
 
             # =========================
-            # CHAT
+            # 4. CHAT (Filtered Logic)
             # =========================
-
-            elif packet_type == "chat":
-
+            elif p_type == "chat":
                 if conn not in authenticated_peers:
-                    print("[REJECTED UNAUTHENTICATED MESSAGE]")
-
                     continue
 
-                sender = packet["data"]["sender"]
+                recipient = p_data.get("recipient")
+                sender = p_data["sender"]
+                message = p_data["message"]
 
-                message = packet["data"]["message"]
+                # Logic: Is this for everyone or specifically for me?
+                my_id = str(config.PEER_ID)
+                target_id = str(recipient) if recipient else None
 
-                from gui.signals import event_bus
+                if target_id is None or target_id == my_id:
+                    from gui.signals import event_bus
 
-                event_bus.message_received.emit(
+                    # Prefix helps the GUI sort into the right "bucket"
+                    prefix = "(Private)" if target_id == my_id else "(Global)"
+                    display_msg = f"{prefix} {sender}: {message}"
 
-                    f"<b>{sender}:</b> {message}"
-
-                )
-
-                save_message(sender, message)
-
-            # =========================
-            # PEER REQUEST
-            # =========================
-
-            elif packet_type == "peer_request":
-
-                response = create_packet(
-                    "peer_response",
-                    list(known_peers)
-                )
-
-                conn.send(response)
+                    event_bus.message_received.emit(display_msg)
+                    save_message(sender, message)
 
             # =========================
-            # PEER RESPONSE
+            # 5. PEER DISCOVERY
             # =========================
+            elif p_type == "peer_request":
+                conn.send(create_packet("peer_response", list(known_peers)))
 
-            elif packet_type == "peer_response":
-
-                peers = packet["data"]
-
+            elif p_type == "peer_response":
                 from network.client import connect_to_peer
-
-                for peer in peers:
-
-                    ip, port = peer
-
+                for ip, port in p_data:
                     if (ip, port) not in known_peers:
-
                         known_peers.add((ip, port))
-
-                        print(f"[DISCOVERED] {ip}:{port}")
-
-                        connect_to_peer(
-                            ip,
-                            port,
-                            receive_loop
-                        )
+                        connect_to_peer(ip, port, receive_loop)
 
         except Exception as e:
-
-            print(e)
-
+            print(f"[SERVER ERROR] {e}")
             break
 
+    # CLEANUP: Remove data when peer disconnects
+    if conn in peer_ids: del peer_ids[conn]
+    if conn in peer_public_keys: del peer_public_keys[conn]
+    if conn in pending_challenges: del pending_challenges[conn]
+    authenticated_peers.discard(conn)
     conn.close()
 
 
 def start_server(port):
-
-    server = socket.socket(
-        socket.AF_INET,
-        socket.SOCK_STREAM
-    )
-
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     server.bind((HOST, port))
-
     server.listen()
 
     print(f"[LISTENING] {HOST}:{port}")
 
     while True:
-
         conn, addr = server.accept()
-
-        print(f"[NEW CONNECTION] {addr}")
-
         connected_peers[addr] = conn
 
-        thread = threading.Thread(
-            target=receive_loop,
-            args=(conn,)
-        )
-
+        thread = threading.Thread(target=receive_loop, args=(conn,))
         thread.daemon = True
-
         thread.start()
+
+        # Immediately send our identity so the other side can authenticate us
+        from network.client import send_identity
+        send_identity(conn)
