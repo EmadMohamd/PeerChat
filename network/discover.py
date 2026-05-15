@@ -8,9 +8,9 @@ connected_peers = {}
 peer_ids = {} # {socket_object: "Peer_Name"}
 
 BOOTSTRAP_PEERS = [
-    ("127.0.0.1", 5000),
-    ("127.0.0.1", 5001),
-    ("127.0.0.1", 5002),
+    ("127.0.0.1", 9000),
+    ("127.0.0.1", 9001),
+    ("127.0.0.1", 9002),
 ]
 
 def add_known_peer(ip, port):

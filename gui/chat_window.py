@@ -43,7 +43,7 @@ class ChatWindow(QWidget):
             QPushButton { background-color: #89b4fa; color: #11111b; border-radius: 15px; padding: 10px 25px; font-weight: bold; }
             QPushButton:hover { background-color: #b4befe; }
             #AppTitle { font-size: 24px; font-weight: bold; color: #89b4fa; }
-            #MyIDLabel { color: #9399b2; font-size: 13px; }
+            #MyIDLabel { color: #9399b2; font-size: 17px; }
             #ChatStatus { font-size: 16px; font-weight: bold; color: #fab387; }
             #SidebarHeader { font-weight: bold; color: #585b70; font-size: 11px; margin-bottom: 5px; }
         """)
@@ -73,7 +73,7 @@ class ChatWindow(QWidget):
         app_name = QLabel("Peer Chat")
         app_name.setObjectName("AppTitle")
 
-        my_id_info = QLabel(f"You: <b style='color: #f5e0dc;'>{config.PEER_ID}</b>")
+        my_id_info = QLabel(f"<b>You:</b> <b style='color: #f5e0dc;'>{config.PEER_ID}</b>")
         my_id_info.setObjectName("MyIDLabel")
         my_id_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -127,7 +127,14 @@ class ChatWindow(QWidget):
     def switch_chat_context(self, item):
         """Changes view and reloads history from SQLite."""
         self.current_chat_target = item.text()
-        self.chat_status_label.setText(self.current_chat_target)
+
+        # Logic to update the label text based on context
+        if self.current_chat_target == "Global Chat":
+            self.chat_status_label.setText("Global Chat")
+        else:
+            # Change the label to "Private Chat: ID"
+            self.chat_status_label.setText(f"Private Chat")
+
         print(f"Loading history for: {self.current_chat_target}")
         self.load_history_from_db()
 
