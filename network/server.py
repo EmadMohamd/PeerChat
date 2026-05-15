@@ -80,23 +80,19 @@ def receive_loop(conn):
                 if conn not in authenticated_peers:
                     continue
 
-                recipient = p_data.get("recipient")
+                recipient = p_data.get("recipient")  # Can be None or PeerID
                 sender = p_data["sender"]
                 message = p_data["message"]
-
-                # Logic: Is this for everyone or specifically for me?
                 my_id = str(config.PEER_ID)
-                target_id = str(recipient) if recipient else None
 
-                if target_id is None or target_id == my_id:
-                    from gui.signals import event_bus
+                # 1. Save to Database (Now with recipient info!)
+                # We pass recipient so we can distinguish Global (None) from Private
+                save_message(sender, message, recipient)
 
-                    # Prefix helps the GUI sort into the right "bucket"
-                    prefix = "(Private)" if target_id == my_id else "(Global)"
-                    display_msg = f"{prefix} {sender}: {message}"
-
-                    event_bus.message_received.emit(display_msg)
-                    save_message(sender, message)
+                # 2. Emit to GUI
+                # We send the sender and recipient separately so the GUI can sort it
+                from gui.signals import event_bus
+                event_bus.message_received.emit(sender, message, recipient)
 
             # =========================
             # 5. PEER DISCOVERY

@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QLineEdit, QPushButton, QLabel, QListWidget, QSplitter, QFrame
+    QLineEdit, QPushButton, QLabel, QListWidget, QSplitter
 )
 from PyQt6.QtCore import Qt, QTimer
 from gui.signals import event_bus
 from network.client import send_chat_message
+from storage.database import get_history, save_message  # New Imports
 import config
 
 
@@ -14,13 +15,12 @@ class ChatWindow(QWidget):
         self.setWindowTitle("PeerChat")
         self.resize(900, 650)
 
-        # State management for filtering
+        # State management
         self.current_chat_target = "Global Chat"
-        self.message_history = {"Global Chat": ""}
 
         self.init_ui()
 
-        # Signals and Timers
+        # Updated Signal: Now expects (sender, message, recipient)
         event_bus.message_received.connect(self.handle_incoming_signal)
 
         # Peer list refresh timer
@@ -28,53 +28,20 @@ class ChatWindow(QWidget):
         self.refresh_timer.timeout.connect(self.update_peer_list)
         self.refresh_timer.start(2000)
 
+        # Load initial Global Chat history on startup
+        self.load_history_from_db()
+
     def init_ui(self):
         # Professional Dark Theme Palette
         self.setStyleSheet("""
-            QWidget { 
-                background-color: #1e1e2e; 
-                color: #cdd6f4; 
-                font-family: 'Segoe UI', sans-serif; 
-            }
-            QTextEdit { 
-                background-color: #181825; 
-                border-radius: 10px; 
-                border: 1px solid #313244; 
-                padding: 10px; 
-                font-size: 14px;
-            }
-            QListWidget { 
-                background-color: #181825; 
-                border-radius: 10px; 
-                border: 1px solid #313244; 
-                outline: none; 
-            }
-            QListWidget::item { 
-                padding: 12px; 
-                border-bottom: 1px solid #313244; 
-                color: #a6adc8;
-            }
-            QListWidget::item:selected { 
-                background-color: #89b4fa; 
-                color: #11111b; 
-                border-radius: 5px; 
-            }
-            QLineEdit { 
-                background-color: #313244; 
-                border-radius: 15px; 
-                padding: 10px 15px; 
-                border: 1px solid #45475a; 
-            }
-            QPushButton { 
-                background-color: #89b4fa; 
-                color: #11111b; 
-                border-radius: 15px; 
-                padding: 10px 25px; 
-                font-weight: bold; 
-            }
-            QPushButton:hover { 
-                background-color: #b4befe; 
-            }
+            QWidget { background-color: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; }
+            QTextEdit { background-color: #181825; border-radius: 10px; border: 1px solid #313244; padding: 10px; font-size: 14px; }
+            QListWidget { background-color: #181825; border-radius: 10px; border: 1px solid #313244; outline: none; }
+            QListWidget::item { padding: 12px; border-bottom: 1px solid #313244; color: #a6adc8; }
+            QListWidget::item:selected { background-color: #89b4fa; color: #11111b; border-radius: 5px; }
+            QLineEdit { background-color: #313244; border-radius: 15px; padding: 10px 15px; border: 1px solid #45475a; }
+            QPushButton { background-color: #89b4fa; color: #11111b; border-radius: 15px; padding: 10px 25px; font-weight: bold; }
+            QPushButton:hover { background-color: #b4befe; }
             #AppTitle { font-size: 24px; font-weight: bold; color: #89b4fa; }
             #MyIDLabel { color: #9399b2; font-size: 13px; }
             #ChatStatus { font-size: 16px; font-weight: bold; color: #fab387; }
@@ -87,7 +54,6 @@ class ChatWindow(QWidget):
         # --- SIDEBAR SECTION ---
         sidebar_widget = QWidget()
         sidebar_layout = QVBoxLayout(sidebar_widget)
-
         sidebar_header = QLabel("ONLINE PEERS")
         sidebar_header.setObjectName("SidebarHeader")
 
@@ -103,12 +69,11 @@ class ChatWindow(QWidget):
         chat_container = QWidget()
         chat_layout = QVBoxLayout(chat_container)
 
-        # Top Header: App Name [Stretch] User ID Info
         header_bar = QHBoxLayout()
         app_name = QLabel("Peer Chat")
         app_name.setObjectName("AppTitle")
 
-        my_id_info = QLabel(f"You are logged in as ID: <b style='color: #f5e0dc;'>{config.PEER_ID}</b>")
+        my_id_info = QLabel(f"You: <b style='color: #f5e0dc;'>{config.PEER_ID}</b>")
         my_id_info.setObjectName("MyIDLabel")
         my_id_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -116,114 +81,110 @@ class ChatWindow(QWidget):
         header_bar.addStretch()
         header_bar.addWidget(my_id_info)
 
-        # Context Title: Shows who you are currently viewing
         self.chat_status_label = QLabel("Global Chat")
         self.chat_status_label.setObjectName("ChatStatus")
 
         self.chat_box = QTextEdit()
         self.chat_box.setReadOnly(True)
 
-        # Input Area
         input_container = QHBoxLayout()
         self.input_box = QLineEdit()
         self.input_box.setPlaceholderText("Type your message here...")
         self.input_box.returnPressed.connect(self.send_message)
 
         self.send_button = QPushButton("Send")
-        self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.clicked.connect(self.send_message)
 
         input_container.addWidget(self.input_box)
         input_container.addWidget(self.send_button)
 
-        # Assemble Chat Section
         chat_layout.addLayout(header_bar)
         chat_layout.addWidget(self.chat_status_label)
         chat_layout.addWidget(self.chat_box)
         chat_layout.addLayout(input_container)
 
-        # Assemble Splitter
         splitter.addWidget(sidebar_widget)
         splitter.addWidget(chat_container)
         splitter.setSizes([200, 700])
         layout.addWidget(splitter)
 
     def update_peer_list(self):
-        """Refreshes the sidebar list from discovered peers."""
         from network.discover import peer_ids
-
-        # Remember current selection
         current_item = self.peer_list_widget.currentItem()
         selected_name = current_item.text() if current_item else "Global Chat"
 
         self.peer_list_widget.clear()
         self.peer_list_widget.addItem("Global Chat")
 
-        for pid in peer_ids.values():
-            pid_str = str(pid)
-            if pid_str != str(config.PEER_ID):
-                self.peer_list_widget.addItem(pid_str)
+        for pid in sorted(peer_ids.values()):
+            if str(pid) != str(config.PEER_ID):
+                self.peer_list_widget.addItem(str(pid))
 
-        # Restore selection
         items = self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchExactly)
         if items:
             self.peer_list_widget.setCurrentItem(items[0])
 
     def switch_chat_context(self, item):
-        """Changes the chat view to a specific peer or global."""
+        """Changes view and reloads history from SQLite."""
         self.current_chat_target = item.text()
         self.chat_status_label.setText(self.current_chat_target)
+        print(f"Loading history for: {self.current_chat_target}")
+        self.load_history_from_db()
 
-        # Load filtered history
-        history = self.message_history.get(self.current_chat_target, "")
-        self.chat_box.setHtml(history)
-        self.scroll_to_bottom()
+    def load_history_from_db(self):
+        """Retrieves messages from database based on current selection."""
+        self.chat_box.clear()
+        target = None if self.current_chat_target == "Global Chat" else self.current_chat_target
+
+        # Call the DB helper we discussed
+        history = get_history(target)
+        for sender, message in history:
+            self.append_to_ui(sender, message)
 
     def send_message(self):
         text = self.input_box.text().strip()
         if not text:
             return
 
-        # Send via network
         recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
+
+        # 1. Send via network
         send_chat_message(text, recipient)
 
-        # Display on UI
-        formatted_msg = f"<div style='margin-bottom: 8px;'><b style='color: #f5c2e7;'>You:</b> {text}</div>"
+        # 2. Save to local DB immediately
+        save_message(config.PEER_ID, text, recipient)
 
-        # Save to history for this specific target
-        self.message_history[self.current_chat_target] = self.message_history.get(self.current_chat_target,
-                                                                                  "") + formatted_msg
+        # 3. Trigger UI update (sending our own ID as sender)
+        self.handle_incoming_signal(config.PEER_ID, text, recipient)
 
-        self.chat_box.append(formatted_msg)
         self.input_box.clear()
+
+    def handle_incoming_signal(self, sender, message, recipient):
+        """Processes 3-part signals and filters for current view."""
+        # Determine if this message belongs to the current window context
+        is_global_msg = (recipient is None)
+
+        show_now = False
+        if is_global_msg and self.current_chat_target == "Global Chat":
+            show_now = True
+        elif recipient == config.PEER_ID and sender == self.current_chat_target:
+            show_now = True
+        elif sender == config.PEER_ID and recipient == self.current_chat_target:
+            show_now = True
+
+        if show_now:
+            self.append_to_ui(sender, message)
+
+    def append_to_ui(self, sender, message):
+        """Formats and appends message to the display."""
+        is_me = (sender == config.PEER_ID)
+        color = "#f5c2e7" if is_me else "#89b4fa"
+        sender_label = "You" if is_me else sender
+
+        formatted = f"<div style='margin-bottom: 8px;'><b style='color: {color};'>{sender_label}:</b> {message}</div>"
+        self.chat_box.append(formatted)
         self.scroll_to_bottom()
 
-    def handle_incoming_signal(self, full_message):
-        """Processes incoming messages and sorts them into the correct history bucket."""
-        is_private = "(Private)" in full_message
-
-        # Simple extraction of sender from string "(Type) Sender: Message"
-        try:
-            sender = full_message.split(":", 1)[0].split(")")[-1].strip()
-        except:
-            sender = "Unknown"
-
-        # Determine which history 'bucket' to save to
-        bucket = sender if is_private else "Global Chat"
-
-        formatted_line = f"<div style='margin-bottom: 8px;'>{full_message}</div>"
-
-        if bucket not in self.message_history:
-            self.message_history[bucket] = ""
-        self.message_history[bucket] += formatted_line
-
-        # Only append to screen if we are currently looking at that chat
-        if self.current_chat_target == bucket:
-            self.chat_box.append(formatted_line)
-            self.scroll_to_bottom()
-
     def scroll_to_bottom(self):
-        """Helper to ensure the latest messages are always visible."""
         scrollbar = self.chat_box.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())

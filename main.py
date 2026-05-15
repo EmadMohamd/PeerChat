@@ -52,13 +52,19 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
 
         print("Usage:")
-        print("python main.py <port> <peer id>")
+        print("Usage: python main.py <port> <username>")
 
         sys.exit()
 
     MY_PORT = int(sys.argv[1])
-    config.PEER_ID = sys.argv[2]
-    print("MAIN PEER_ID:", config.PEER_ID)
+    config.USERNAME = sys.argv[2]
+
+    peer_id = ensure_keys_exist()
+    print(f"--- PeerChat  Started ---")
+    print(f"User:    {config.USERNAME}")
+    print(f"Net ID:  {config.PEER_ID}")
+    print(f"Port:    {config.PORT}")
+    print(f"-----------------------------")
     ensure_keys_exist()
     init_client_keys()
 
