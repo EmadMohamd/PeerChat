@@ -162,21 +162,21 @@ To run peers locally, provide the **Port** and **Username** as arguments. The sy
 **Terminal 1 (Alice):**
 
 ```bash
-python main.py 5000 Alice
+python main.py 9000 Alice
 
 ```
 
 **Terminal 2 (Bob):**
 
 ```bash
-python main.py 5001 Bob
+python main.py 9001 Bob
 
 ```
 
 **Terminal 3 (Charlie):**
 
 ```bash
-python main.py 5002 Charlie
+python main.py 9002 Charlie
 
 ```
 
