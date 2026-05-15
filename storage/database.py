@@ -8,6 +8,7 @@ cursor.execute("""
 CREATE TABLE IF NOT EXISTS messages(
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     sender TEXT,
+    recipient TEXT,
     message TEXT
 )
 """)
