@@ -1,49 +1,65 @@
 import sqlite3
+import hashlib
 import config
-conn = sqlite3.connect("chat.db", check_same_thread=False, timeout=10)
 
-cursor = conn.cursor()
 
-cursor.execute("""
-CREATE TABLE IF NOT EXISTS messages(
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    sender TEXT,
-    recipient TEXT,
-    message TEXT
-)
-""")
+def get_db_name():
+    """Generates a unique database name per instance based on its active port."""
+    return f"chat_{config.PORT}.db"
 
-conn.commit()
+
+def get_db_connection():
+    """Opens a connection and dynamically ensures the schema exists before returning."""
+    db_name = get_db_name()
+    conn = sqlite3.connect(db_name, check_same_thread=False, timeout=10)
+
+    # Force schema creation verification on the active file context
+    cursor = conn.cursor()
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS messages(
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        msg_hash TEXT UNIQUE,
+        sender TEXT,
+        recipient TEXT,
+        message TEXT
+    )
+    """)
+    conn.commit()
+    return conn
 
 
 def save_message(sender, message, recipient=None):
-    # Convert the UI string "Global Chat" to None for the database
     if recipient == "Global Chat":
         recipient = None
 
-    conn = sqlite3.connect("chat.db")
+    raw_payload = f"{sender}:{recipient or 'Global'}:{message.strip()}"
+    msg_hash = hashlib.sha256(raw_payload.encode('utf-8')).hexdigest()
+
+    # Get connection (this automatically ensures the table exists)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO messages (sender, message, recipient) VALUES (?, ?, ?)",
-                   (sender, message, recipient))
-    conn.commit()
-    conn.close()
+
+    try:
+        cursor.execute(
+            "INSERT OR IGNORE INTO messages (msg_hash, sender, message, recipient) VALUES (?, ?, ?, ?)",
+            (msg_hash, sender, message, recipient)
+        )
+        conn.commit()
+    except Exception as e:
+        print(f"[DB_ERROR] Failed to save message: {e}")
+    finally:
+        conn.close()
 
 
 def get_history(target_peer=None):
-    """
-    target_peer is None for Global.
-    target_peer is a string (e.g., 'Bob-a1b2') for Private.
-    """
-    conn = sqlite3.connect("chat.db")
+    # Get connection (this automatically ensures the table exists)
+    conn = get_db_connection()
     cursor = conn.cursor()
     my_id = config.PEER_ID
 
-    if target_peer is None:
-        # Global Chat: Look for rows where recipient is null
-        cursor.execute("SELECT sender, message FROM messages WHERE recipient IS NULL")
+    if target_peer is None or target_peer == "Global Chat":
+        cursor.execute("SELECT sender, message FROM messages WHERE recipient IS NULL ORDER BY id ASC")
     else:
-        # Private Chat: Messages between ME and TARGET
-        # We need both directions to see a full conversation!
         cursor.execute("""
             SELECT sender, message FROM messages 
             WHERE (sender = ? AND recipient = ?) 

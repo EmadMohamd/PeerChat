@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
 from PyQt6.QtCore import Qt, QTimer
 from gui.signals import event_bus
 from network.client import send_chat_message
-from storage.database import get_history, save_message  # New Imports
+from storage.database import get_history, save_message
 import config
 
 
@@ -18,9 +18,12 @@ class ChatWindow(QWidget):
         # State management
         self.current_chat_target = "Global Chat"
 
+        # GUI Deduplication tracking to prevent signal echos
+        self.recent_rendered_messages = set()
+
         self.init_ui()
 
-        # Updated Signal: Now expects (sender, message, recipient)
+        # Connect network signals safely
         event_bus.message_received.connect(self.handle_incoming_signal)
 
         # Peer list refresh timer
@@ -32,7 +35,6 @@ class ChatWindow(QWidget):
         self.load_history_from_db()
 
     def init_ui(self):
-        # Professional Dark Theme Palette
         self.setStyleSheet("""
             QWidget { background-color: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; }
             QTextEdit { background-color: #181825; border-radius: 10px; border: 1px solid #313244; padding: 10px; font-size: 14px; }
@@ -125,25 +127,19 @@ class ChatWindow(QWidget):
             self.peer_list_widget.setCurrentItem(items[0])
 
     def switch_chat_context(self, item):
-        """Changes view and reloads history from SQLite."""
         self.current_chat_target = item.text()
 
-        # Logic to update the label text based on context
         if self.current_chat_target == "Global Chat":
             self.chat_status_label.setText("Global Chat")
         else:
-            # Change the label to "Private Chat: ID"
-            self.chat_status_label.setText(f"Private Chat")
+            self.chat_status_label.setText(f"Private Chat: {self.current_chat_target}")
 
-        print(f"Loading history for: {self.current_chat_target}")
         self.load_history_from_db()
 
     def load_history_from_db(self):
-        """Retrieves messages from database based on current selection."""
         self.chat_box.clear()
         target = None if self.current_chat_target == "Global Chat" else self.current_chat_target
 
-        # Call the DB helper we discussed
         history = get_history(target)
         for sender, message in history:
             self.append_to_ui(sender, message)
@@ -155,20 +151,35 @@ class ChatWindow(QWidget):
 
         recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
 
-        # 1. Send via network
+        # 1. Send via network wire
         send_chat_message(text, recipient)
 
-        # 2. Save to local DB immediately
+        # 2. Save directly to database
         save_message(config.PEER_ID, text, recipient)
 
-        # 3. Trigger UI update (sending our own ID as sender)
-        self.handle_incoming_signal(config.PEER_ID, text, recipient)
+        # FIX: We no longer call handle_incoming_signal manually here. 
+        # The database and network threads will sync back down to update the screen cleanly.
+
+        # 3. Direct local print fallback for instantly responsive local context rendering
+        self.append_to_ui(config.PEER_ID, text)
 
         self.input_box.clear()
 
     def handle_incoming_signal(self, sender, message, recipient):
-        """Processes 3-part signals and filters for current view."""
-        # Determine if this message belongs to the current window context
+        """Processes signals and drops echo duplicates coming from loopback threads."""
+        # Drop if it's an echo signature of a message we just processed locally
+        msg_signature = f"{sender}:{recipient}:{message}"
+        if msg_signature in self.recent_rendered_messages:
+            return
+
+        # Add to local short-term cache filter
+        self.recent_rendered_messages.add(msg_signature)
+        QTimer.singleShot(3000, lambda: self.recent_rendered_messages.discard(msg_signature))
+
+        # Do not render if we sent it (send_message already appended it locally)
+        if sender == config.PEER_ID:
+            return
+
         is_global_msg = (recipient is None)
 
         show_now = False
@@ -183,7 +194,6 @@ class ChatWindow(QWidget):
             self.append_to_ui(sender, message)
 
     def append_to_ui(self, sender, message):
-        """Formats and appends message to the display."""
         is_me = (sender == config.PEER_ID)
         color = "#f5c2e7" if is_me else "#89b4fa"
         sender_label = "You" if is_me else sender

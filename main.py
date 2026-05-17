@@ -1,80 +1,46 @@
+# main.py
 import sys
 import threading
 import time
 import config
-from network.server import (
-    start_server,
-    receive_loop
-)
 
-from network.client import (
-    connect_to_peer,
-    init_client_keys
-)
-from network.discover import (
-    BOOTSTRAP_PEERS
-)
-
-from security.keys import (
-    ensure_keys_exist
-
-)
-
+from network.server import start_server
+from network.client import init_client_keys
+from security.keys import ensure_keys_exist
 from gui.app import start_gui
 
-
-def start_network(port):
-
-    server_thread = threading.Thread(
-        target=start_server,
-        args=(port,)
-    )
-
-    server_thread.daemon = True
-
+def start_network(my_port):
+    """Launches the localized binding instance safely."""
+    server_thread = threading.Thread(target=start_server, args=(my_port,), daemon=True)
     server_thread.start()
+    print(f"[MAIN] Server process bound and running on listening port: {my_port}")
 
-    time.sleep(2)
-
-    for ip, port in BOOTSTRAP_PEERS:
-
-        if port != MY_PORT:
-
-            connect_to_peer(
-                ip,
-                port,
-                receive_loop
-            )
-
+    time.sleep(1)
+    print(f"[MAIN] Background peer discovery system fully deployed.")
 
 if __name__ == "__main__":
-
     if len(sys.argv) < 3:
-
-        print("Usage:")
         print("Usage: python main.py <port> <username>")
+        sys.exit(1)
 
-        sys.exit()
-
-    MY_PORT = int(sys.argv[1])
+    # Global runtime configurations assigned immediately upon execution
+    config.PORT = int(sys.argv[1])
     config.USERNAME = sys.argv[2]
 
-    peer_id = ensure_keys_exist()
-    print(f"--- PeerChat  Started ---")
-    print(f"User:    {config.USERNAME}")
-    print(f"Net ID:  {config.PEER_ID}")
-    print(f"Port:    {config.PORT}")
+    # Storing node structural ID parameters safely
+    node_id = ensure_keys_exist()
+    config.PEER_ID = node_id
+
+    print(f"--- PeerChat Network Mode ---")
+    print(f"User Identification: {config.USERNAME}")
+    print(f"Cryptographic ID:    {config.PEER_ID}")
+    print(f"Listening Boundary:  {config.PORT}")
     print(f"-----------------------------")
-    ensure_keys_exist()
+
     init_client_keys()
 
-    network_thread = threading.Thread(
-        target=start_network,
-        args=(MY_PORT,)
-    )
-
-    network_thread.daemon = True
-
+    network_thread = threading.Thread(target=start_network, args=(config.PORT,), daemon=True)
     network_thread.start()
 
+    # Pass primary application execution over to GUI execution framework
     start_gui()
