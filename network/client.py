@@ -1,6 +1,15 @@
 import socket, threading, time, config
+import random
+
 from network.protocol import create_packet
 from network.discover import connected_peers, known_peers, BOOTSTRAP_PEERS, add_known_peer, network_lock
+
+DISCOVERY_INTERVAL = 30
+
+MAX_PEERS = 12
+GOSSIP_FANOUT = 2
+GOSSIP_PEER_SAMPLE = 5
+RETRY_COOLDOWN = 60
 
 private_key, public_key = None, None
 
@@ -79,27 +88,155 @@ def send_chat_message(message, target_peer_id=None):
                 pass
 
 
+last_attempts = {}
+
 def start_discovery_loop(receive_loop):
+
     def loop():
+        # ---------------------------------
+        # Add bootstrap peers once
+        # ---------------------------------
         for ip, port in BOOTSTRAP_PEERS:
-            if int(port) != int(config.PORT): add_known_peer(ip, port)
+            if int(port) != int(config.PORT):
+                add_known_peer(ip, port)
+
+        # ---------------------------------
+        # Main discovery loop
+        # ---------------------------------
+
         while True:
-            with network_lock:
-                targets = list(known_peers)
-            for ip, port in targets:
+            try:
+                # ---------------------------------
+                # Snapshot peer state
+                # ---------------------------------
                 with network_lock:
-                    linked = (ip, port) in connected_peers
-                if not linked: connect_to_peer(ip, port, receive_loop)
+                    known = list(known_peers)
+                    connected = list(connected_peers)
 
-            from network.discover import get_all_connections
-            all_socks = get_all_connections()
-            if all_socks:
-                p = create_packet("peer_request", {})
-                for sock in all_socks:
-                    try:
-                        sock.sendall(p)
-                    except:
-                        pass
-            time.sleep(4)
+                print(
+                    f"[DISCOVERY] "
+                    f"known={len(known)} "
+                    f"connected={len(connected)}"
+                )
 
-    threading.Thread(target=loop, daemon=True).start()
+                # ---------------------------------
+                # Maintain limited peer connections
+                # ---------------------------------
+
+                current_connections = len(connected)
+                if current_connections < MAX_PEERS:
+                    candidates = [
+                        peer for peer in known
+                        if peer not in connected
+                    ]
+
+                    random.shuffle(candidates)
+                    needed = MAX_PEERS - current_connections
+
+                    print(
+                        f"[DISCOVERY] "
+                        f"Need {needed} more peer(s)"
+                    )
+
+                    for ip, port in candidates[:needed]:
+
+                        peer = (ip, port)
+                        now = time.time()
+
+                        # cooldown protection
+                        if peer in last_attempts:
+                            elapsed = now - last_attempts[peer]
+                            if elapsed < RETRY_COOLDOWN:
+
+                                print(
+                                    f"[DISCOVERY] "
+                                    f"Cooldown active for "
+                                    f"{ip}:{port}"
+                                )
+                                continue
+                        last_attempts[peer] = now
+                        print(
+                            f"[DISCOVERY] "
+                            f"Connecting to "
+                            f"{ip}:{port}"
+                        )
+                        try:
+                            connect_to_peer(
+                                ip,
+                                port,
+                                receive_loop
+                            )
+                        except Exception as e:
+
+                            print(
+                                f"[DISCOVERY] "
+                                f"Connection failed "
+                                f"{ip}:{port} -> {e}"
+                            )
+
+                # ---------------------------------
+                # Gossip discovery
+                # ---------------------------------
+
+                from network.discover import (
+                    get_all_connections
+                )
+
+                all_socks = get_all_connections()
+                if all_socks:
+                    gossip_targets = random.sample(
+                        all_socks,
+                        min(
+                            GOSSIP_FANOUT,
+                            len(all_socks)
+                        )
+                    )
+                    packet = create_packet(
+                        "peer_request",
+                        {
+                            "sample_size":
+                            GOSSIP_PEER_SAMPLE
+                        }
+                    )
+                    print(
+                        f"[DISCOVERY] "
+                        f"Gossiping to "
+                        f"{len(gossip_targets)} peer(s)"
+                    )
+                    for sock in gossip_targets:
+                        try:
+                            peername = sock.getpeername()
+                            print(
+                                f"[DISCOVERY] -> "
+                                f"Requesting "
+                                f"{GOSSIP_PEER_SAMPLE} "
+                                f"peer(s) from "
+                                f"{peername[0]}:"
+                                f"{peername[1]}"
+                            )
+                            sock.sendall(packet)
+                        except Exception as e:
+                            print(
+                                f"[DISCOVERY] "
+                                f"Gossip send failed: "
+                                f"{e}"
+                            )
+                else:
+                    print(
+                        "[DISCOVERY] "
+                        "No active sockets"
+                    )
+
+            except Exception as e:
+
+                print(
+                    f"[DISCOVERY] "
+                    f"Loop error: {e}"
+                )
+
+            time.sleep(DISCOVERY_INTERVAL)
+
+    threading.Thread(
+        target=loop,
+        daemon=True
+    ).start()

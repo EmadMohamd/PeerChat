@@ -59,14 +59,47 @@ def receive_loop(conn):
             elif p_type == "challenge_response":
                 with network_lock:
                     ch, pub = pending_challenges.get(conn), peer_public_keys.get(conn)
-                if ch and pub and verify_signature(pub, ch, bytes.fromhex(p_data["signature"])):
+                if ch and pub and verify_signature(
+                        pub,
+                        ch,
+                        bytes.fromhex(p_data["signature"])
+                ):
+
                     if remote_listening_addr and temp_peer_id:
-                        register_authenticated_connection(remote_listening_addr[0], remote_listening_addr[1], conn,
-                                                          temp_peer_id)
-                        conn.sendall(create_packet("peer_welcome",
-                                                   {"peer_id": config.PEER_ID, "listening_port": int(config.PORT)}))
+                        peer_ip = remote_listening_addr[0]
+                        peer_port = remote_listening_addr[1]
+
+                        register_authenticated_connection(
+                            peer_ip,
+                            peer_port,
+                            conn,
+                            temp_peer_id
+                        )
+
+                        print(
+                            f"[AUTH] SUCCESS | "
+                            f"PEER={temp_peer_id} | "
+                            f"IP={peer_ip} | "
+                            f"PORT={peer_port}"
+                        )
+
+                        conn.sendall(
+                            create_packet(
+                                "peer_welcome",
+                                {
+                                    "peer_id": config.PEER_ID,
+                                    "listening_port": int(config.PORT)
+                                }
+                            )
+                        )
+
                         push_routing_table(conn)
-                        broadcast_new_peer(remote_listening_addr[0], remote_listening_addr[1], conn)
+
+                        broadcast_new_peer(
+                            peer_ip,
+                            peer_port,
+                            conn
+                        )
                 else:
                     break
 
