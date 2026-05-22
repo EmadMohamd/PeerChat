@@ -128,6 +128,7 @@ peerchat/
 │   └── Alice_public.pem
 │
 ├── gui/
+│   ├── app.py          # Start GUI
 │   ├── chat_window.py  # Filtered UI logic & Context Switching
 │   └── signals.py      # Event bus (3-part signaling: Sender, Msg, Recipient)
 │
@@ -137,8 +138,9 @@ peerchat/
 │   └── discovery.py    # Global peer registry
 │
 ├── security/
-│   └── keys.py         # Key generation, hashing, and filename management
-│
+│   ├── keys.py        # Public & private key generation
+│   └── crypto.py      # Hashing, and filename management
+│   
 └── storage/
     └── database.py     # SQLite history (get_history, save_message)
 
