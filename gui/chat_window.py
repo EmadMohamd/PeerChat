@@ -1,10 +1,11 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
-    QLineEdit, QPushButton, QLabel, QListWidget, QSplitter
+    QLineEdit, QPushButton, QLabel, QListWidget, QSplitter,
+    QFileDialog  # ADDED: For picking files
 )
 from PyQt6.QtCore import Qt, QTimer
 from gui.signals import event_bus
-from network.client import send_chat_message
+from network.client import send_chat_message, send_file_attachment  # ADDED: Network helper
 from storage.database import get_history, save_message
 import config
 
@@ -44,6 +45,18 @@ class ChatWindow(QWidget):
             QLineEdit { background-color: #313244; border-radius: 15px; padding: 10px 15px; border: 1px solid #45475a; }
             QPushButton { background-color: #89b4fa; color: #11111b; border-radius: 15px; padding: 10px 25px; font-weight: bold; }
             QPushButton:hover { background-color: #b4befe; }
+
+            /* ADDED: Attachment Button Styling */
+            QPushButton#AttachButton { 
+                background-color: #313244; 
+                color: #b4befe; 
+                font-size: 18px; 
+                border-radius: 15px; 
+                padding: 5px 15px; 
+                border: 1px solid #45475a;
+            }
+            QPushButton#AttachButton:hover { background-color: #45475a; color: #89b4fa; }
+
             #AppTitle { font-size: 24px; font-weight: bold; color: #89b4fa; }
             #MyIDLabel { color: #9399b2; font-size: 17px; }
             #ChatStatus { font-size: 16px; font-weight: bold; color: #fab387; }
@@ -90,6 +103,12 @@ class ChatWindow(QWidget):
         self.chat_box.setReadOnly(True)
 
         input_container = QHBoxLayout()
+
+        # ADDED: Attachment Icon Button
+        self.attach_button = QPushButton("📎")
+        self.attach_button.setObjectName("AttachButton")
+        self.attach_button.clicked.connect(self.attach_file)
+
         self.input_box = QLineEdit()
         self.input_box.setPlaceholderText("Type your message here...")
         self.input_box.returnPressed.connect(self.send_message)
@@ -97,6 +116,8 @@ class ChatWindow(QWidget):
         self.send_button = QPushButton("Send")
         self.send_button.clicked.connect(self.send_message)
 
+        # CHANGED: Insert attach button before the message line edit
+        input_container.addWidget(self.attach_button)
         input_container.addWidget(self.input_box)
         input_container.addWidget(self.send_button)
 
@@ -109,6 +130,20 @@ class ChatWindow(QWidget):
         splitter.addWidget(chat_container)
         splitter.setSizes([200, 700])
         layout.addWidget(splitter)
+
+    # ADDED: Method to handle selecting and triggering file transfers
+    def attach_file(self):
+        file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
+        if not file_path:
+            return
+
+        recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
+        file_name = send_file_attachment(file_path, recipient)
+
+        if file_name:
+            display_msg = f"📎 Sent a file: {file_name}"
+            save_message(config.PEER_ID, display_msg, recipient)
+            self.append_to_ui(config.PEER_ID, display_msg)
 
     def update_peer_list(self):
         from network.discover import peer_ids
@@ -157,9 +192,6 @@ class ChatWindow(QWidget):
         # 2. Save directly to database
         save_message(config.PEER_ID, text, recipient)
 
-        # FIX: We no longer call handle_incoming_signal manually here. 
-        # The database and network threads will sync back down to update the screen cleanly.
-
         # 3. Direct local print fallback for instantly responsive local context rendering
         self.append_to_ui(config.PEER_ID, text)
 
@@ -198,7 +230,12 @@ class ChatWindow(QWidget):
         color = "#f5c2e7" if is_me else "#89b4fa"
         sender_label = "You" if is_me else sender
 
-        formatted = f"<div style='margin-bottom: 8px;'><b style='color: {color};'>{sender_label}:</b> {message}</div>"
+        # CHANGED: Added distinct background formatting if the message contains a file attachment icon
+        if "📎" in message:
+            formatted = f"<div style='margin-bottom: 8px; padding: 4px 8px; background-color: #252434; border-radius: 6px;'><b style='color: {color};'>{sender_label}:</b> <span style='color: #a6e3a1;'>{message}</span></div>"
+        else:
+            formatted = f"<div style='margin-bottom: 8px;'><b style='color: {color};'>{sender_label}:</b> {message}</div>"
+
         self.chat_box.append(formatted)
         self.scroll_to_bottom()
 

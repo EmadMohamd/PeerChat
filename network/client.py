@@ -1,6 +1,6 @@
-import socket, threading, time, config
+import socket, threading, time, config, os
 import random
-
+import base64
 from network.protocol import create_packet
 from network.discover import connected_peers, known_peers, BOOTSTRAP_PEERS, add_known_peer, network_lock
 
@@ -109,6 +109,51 @@ def send_chat_message(message, target_peer_id=None):
 
 
 last_attempts = {}
+
+
+def send_file_attachment(file_path, target_peer_id=None):
+    from network.protocol import create_packet
+    from network.discover import network_lock, peer_ids, authenticated_peers
+    import config
+
+    if not os.path.exists(file_path):
+        return None
+
+    file_name = os.path.basename(file_path)
+
+    # Read and encode file to base64 string
+    with open(file_path, "rb") as f:
+        file_bytes = f.read()
+    base64_data = base64.b64encode(file_bytes).decode('utf-8')
+
+    packet = create_packet("file_transfer", {
+        "sender": config.PEER_ID,
+        "recipient": target_peer_id,
+        "file_name": file_name,
+        "payload": base64_data
+    })
+
+    sent_peers = set()
+
+    with network_lock:
+        active_sockets = [sock for sock in authenticated_peers if sock in peer_ids]
+
+        for sock in active_sockets:
+            p_id = peer_ids[sock]
+
+            if target_peer_id and p_id != target_peer_id:
+                continue
+
+            if p_id in sent_peers:
+                continue
+
+            try:
+                sock.sendall(packet)
+                sent_peers.add(p_id)
+            except:
+                pass
+
+    return file_name  # Return to GUI for local rendering
 
 
 def start_discovery_loop(receive_loop):

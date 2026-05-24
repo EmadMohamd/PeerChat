@@ -1,4 +1,4 @@
-import socket, threading, secrets, config
+import socket, threading, secrets, config, os , base64
 from network.protocol import parse_packet, create_packet
 from network.discover import (
     connected_peers, authenticated_peers, peer_public_keys, pending_challenges,
@@ -156,6 +156,46 @@ def receive_loop(conn):
                 with network_lock:
                     authenticated = conn in authenticated_peers
                 if authenticated: push_routing_table(conn)
+            elif p_type == "file_transfer":
+                with network_lock:
+                    authenticated = conn in authenticated_peers
+                if not authenticated:
+                    continue
+
+                sender = p_data["sender"]
+                recipient = p_data.get("recipient")
+                file_name = p_data["file_name"]
+                payload = p_data["payload"]
+
+                if sender == config.PEER_ID:
+                    continue
+
+                # Reconstruct and save file
+
+                os.makedirs("downloads", exist_ok=True)
+
+                # Deduplicate filename if it exists
+                save_path = os.path.join("downloads", file_name)
+                counter = 1
+                base, ext = os.path.splitext(file_name)
+                while os.path.exists(save_path):
+                    save_path = os.path.join("downloads", f"{base}_{counter}{ext}")
+                    counter += 1
+
+                try:
+                    with open(save_path, "wb") as f:
+                        f.write(base64.b64decode(payload))
+                except Exception as e:
+                    print(f"[SERVER] Failed to write file: {e}")
+                    continue
+
+                # Build a display message for DB and GUI
+                display_msg = f"📎 Sent a file: {os.path.basename(save_path)}"
+
+                # Save to database and alert GUI via event bus
+                save_message(sender, display_msg, recipient)
+                from gui.signals import event_bus
+                event_bus.message_received.emit(sender, display_msg, recipient)
 
             elif p_type == "peer_response":
                 from network.client import connect_to_peer
