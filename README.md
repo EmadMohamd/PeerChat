@@ -19,7 +19,7 @@ The system now supports:
 
 * Fully decentralized peer-to-peer architecture.
 * TCP socket communication with newline-delimited JSON streaming.
-* **Robust File Streaming:** Binary files are automatically serialized using Base64 ASCII strings, optimized with buffered socket streams ($1\text{ MB}$ allocation blocks) to allow seamless cross-platform delivery (e.g., Windows $\leftrightarrow$ Kali Linux) without data corruption or packet dropping.
+* **Robust File Streaming:** Binary files are automatically serialized using Base64 ASCII strings, optimized with buffered socket streams to allow seamless cross-platform delivery without data corruption or packet dropping.
 * Automatic peer discovery through bootstrap peers and dynamic peer list exchange.
 * Multi-peer simultaneous communication with continuous receive loops.
 * **Connectivity Note:** Ensure your **trusted bootstrap peers** are online and reachable on their specified ports to join the network swarm successfully.
@@ -175,6 +175,8 @@ peerchat/
 ---
 
 # Running PeerChat
+
+When setting up a project simulation rather than connecting to an established network, ensure that the bootstrap peers are initialized first.
 
 ## Install Dependencies
 
