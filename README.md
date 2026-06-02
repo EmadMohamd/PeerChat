@@ -1,15 +1,16 @@
 # PeerChat — Secure Decentralized P2P Messaging System
 
-PeerChat is a decentralized peer-to-peer messaging platform written in Python. Each node acts as both a client and server, enabling direct encrypted communication without relying on a centralized backend. **Identity is cryptographically derived from RSA keys, ensuring that your username is uniquely yours.**
+PeerChat is a decentralized peer-to-peer messaging platform written in Python. Each node acts as both a client and server, enabling direct encrypted communication without relying on a centralized backend. **Identity is cryptographically derived from RSA keys, ensuring that each user is uniquely identifiable and resistant to spoofing.**
 
-The system now supports:
+The system supports:
 
-* **Context-Aware Filtering:** Private messages are isolated from Global Chat via a dual-pane UI.
-* **Automatic Peer Discovery:** Dynamic network expansion through bootstrap peers.
-* **RSA Identity Verification:** Secure challenge-response authentication.
-* **Modernized GUI:** Polished PyQt6 interface with dark mode and sidebar navigation.
-* **Local Persistence:** Full message history stored and retrieved via SQLite.
-* **File Attachments (New):** Direct peer-to-peer file sharing with an intuitive layout and automated local caching.
+* Context-aware private and global messaging
+* Automatic peer discovery across LAN and local environments
+* RSA-based challenge-response authentication
+* Persistent message history with timestamps
+* Online/offline peer visibility tracking
+* File transfer via Base64-encoded packets
+* Modern PyQt6 interface with real-time updates
 
 ---
 
@@ -17,42 +18,67 @@ The system now supports:
 
 ## Networking & Data Transfer
 
-* Fully decentralized peer-to-peer architecture.
-* TCP socket communication with newline-delimited JSON streaming.
-* **Robust File Streaming:** Binary files are automatically serialized using Base64 ASCII strings, optimized with buffered socket streams to allow seamless cross-platform delivery without data corruption or packet dropping.
-* Automatic peer discovery through bootstrap peers and dynamic peer list exchange.
-* Multi-peer simultaneous communication with continuous receive loops.
-* **Connectivity Note:** Ensure your **trusted bootstrap peers** are online and reachable on their specified ports to join the network swarm successfully.
+* Fully decentralized peer-to-peer architecture
+* TCP socket communication using newline-delimited JSON packets
+* Automatic peer discovery through bootstrap peers and gossip-based routing
+* Multi-peer simultaneous communication with continuous receive loops
+* Robust file transfer using Base64 encoding to ensure cross-platform integrity
+* Network resilience through retry cooldowns and peer revalidation
+
+**Connectivity Note:** At least one bootstrap peer must be reachable for network discovery to begin.
+
+---
 
 ## Security
 
-* **RSA Public/Private Keys:** Identity proven via cryptographic signatures.
-* **Cryptographic Peer IDs:** Peer IDs are generated as a hash of your RSA Public Key (`Username-Hash`), preventing identity spoofing.
-* **Challenge-Response Flow:** Prevents identity theft without ever transmitting private keys or passwords.
-* **Key Isolation:** All sensitive `.pem` files are stored in a dedicated `keys/` directory, organized by username.
+* RSA Public/Private key cryptography for identity verification
+* Cryptographic Peer IDs derived from public keys
+* Challenge-response authentication prevents impersonation
+* No passwords or centralized identity storage
+* Secure key storage in local `keys/` directory
+
+---
 
 ## Messaging & Sharing
 
-* **Direct Private Messaging:** Target specific peers for 1-on-1 filtered conversations.
-* **Global Broadcast:** Message all connected peers in the swarm simultaneously.
-* **File Attachments:** WhatsApp-style file sending interface natively integrated next to the input message bar.
-* **Automatic Downloads:** Received attachments are automatically buffered, collision-checked to prevent filename overwriting, and stored securely in a local `downloads/` folder.
-* **JSON Packet Protocol:** Structured communication payloads for precise text routing and robust file segment mapping.
-* **Persistence:** All text messages and file-transfer reference markers are saved locally to `chat_history.db`.
+* Direct private messaging between peers
+* Global broadcast messaging to all connected peers
+* File attachments with automatic download handling
+* JSON-based message protocol for structured routing
+* Local persistence of all messages and file references
+* Timestamped message history for accurate chronological reconstruction
+
+---
 
 ## GUI
 
-* **Modern PyQt6 Interface:** Sidebar for peer selection and a sleek dark-themed chat area.
-* **Attachment Button:** A dedicated paperclip attachment icon (📎) mapped directly to your operating system's native file explorer.
-* **Enhanced Log Rendering:** Context-aware UI highlighting that dynamically wraps file attachments in custom stylized blocks to differentiate them from standard text messages.
-* **Identity Header:** Clear display of your unique cryptographic Peer ID at the top right.
-* **Contextual History:** Automatic message retrieval from SQLite based on the selected peer in the sidebar.
+* Modern PyQt6 interface with dark theme
+* Sidebar-based peer navigation system
+* Real-time chat window with message rendering
+* Attachment button (📎) for file selection
+* Display of user identity (Peer ID) in header
+* Context-aware message history loading
+
+### Message Features
+
+* Each message includes a timestamp
+* Sent and received messages are stored consistently
+* History is reconstructed automatically per chat context
+
+### Peer List Features
+
+* Displays **all known peers from history and network discovery**
+* Real-time online/offline status indicators:
+
+  * 🟢 Online (currently connected)
+  * ⚫ Offline (seen before but not currently connected)
+* Peers remain visible even when offline (persistent identity model)
 
 ---
 
 # Architecture
 
-```text
+```
                 ┌───────────────┐
                 │   Peer A      │
                 └──────┬────────┘
@@ -68,16 +94,15 @@ The system now supports:
                 ┌──────▼────────┐
                 │    Peer D     │
                 └───────────────┘
-
-
 ```
 
 Each peer contains:
 
-* Listener Server & Outgoing Client Connector
-* Message Handler & Peer Discovery Engine
-* Authentication Layer (RSA)
-* Local SQLite Database, Buffered Downloader, & Modern PyQt6 Frontend
+* Listener server & outgoing client connector
+* Message handler & peer discovery engine
+* Authentication layer (RSA challenge-response)
+* Local SQLite database with timestamped history
+* PyQt6 frontend with real-time updates
 
 ---
 
@@ -85,133 +110,128 @@ Each peer contains:
 
 PeerChat uses cryptographic verification instead of passwords.
 
-```text
+```
 1. Connect
-      ↓
-2. Exchange Public Keys (Identity Packet)
-      ↓
-3. Generate Random Challenge
-      ↓
-4. Sign Challenge with Private Key
-      ↓
-5. Verify Signature using Public Key
-      ↓
-6. Authenticated Communication Begins
-
-
+   ↓
+2. Exchange public keys (identity packet)
+   ↓
+3. Generate random challenge
+   ↓
+4. Sign challenge with private key
+   ↓
+5. Verify signature using public key
+   ↓
+6. Authenticated communication begins
 ```
 
 ---
 
 # Message Protocol
 
-## Chat Packet (Direct/Global)
+## Chat Packet (Direct / Global)
 
 ```json
 {
-    "type": "chat",
-    "data": {
-        "sender": "Alice-a1b2c3d4",
-        "recipient": "Bob-e5f6g7h8", 
-        "message": "Hello, Bob!"
-    }
+  "type": "chat",
+  "data": {
+    "sender": "Alice-a1b2c3d4",
+    "recipient": "Bob-e5f6g7h8",
+    "message": "Hello, Bob!"
+  }
 }
-
 ```
 
-*If `recipient` is null, the message is treated as a Global Broadcast.*
+If `recipient` is `null`, the message is treated as a global broadcast.
 
-## File Transfer Packet (New)
+---
+
+## File Transfer Packet
 
 ```json
 {
-    "type": "file_transfer",
-    "data": {
-        "sender": "Alice-a1b2c3d4",
-        "recipient": "Bob-e5f6g7h8",
-        "file_name": "document.pdf",
-        "payload": "JVBERi0xLjQKJbXtr90KMSAwIG9iagogIDw8IC9UeXBlIC9DYXRhbG9nCiAgICAvUGFn..."
-    }
+  "type": "file_transfer",
+  "data": {
+    "sender": "Alice-a1b2c3d4",
+    "recipient": "Bob-e5f6g7h8",
+    "file_name": "document.pdf",
+    "payload": "BASE64_ENCODED_DATA..."
+  }
 }
-
 ```
 
 ---
 
 # Folder Structure
 
-```text
+```
 peerchat/
 │
-├── main.py             # Entry point (Handles CLI arguments for Port/Username)
-├── config.py           # Runtime settings (Username, Peer ID, Port)
+├── main.py             # Entry point (CLI args: port, username)
+├── config.py           # Runtime settings (Peer ID, Port, Username)
 │
-├── keys/               # Secure storage for RSA keys
+├── keys/               # RSA key storage per user
 │   ├── Alice_private.pem
 │   └── Alice_public.pem
 │
-├── downloads/          # Auto-created folder for received file attachments
-│   └── shared_image.png
+├── downloads/          # Received file attachments
 │
 ├── gui/
-│   ├── app.py          # Start GUI
-│   ├── chat_window.py  # Attachment action trigger, UI rendering, & Filtered logic
-│   └── signals.py      # Event bus (3-part signaling: Sender, Msg, Recipient)
+│   ├── app.py          # GUI launcher
+│   ├── chat_window.py  # UI + message rendering logic
+│   └── signals.py      # Event bus system
 │
 ├── network/
-│   ├── server.py       # Handshake, Buffered File Writer, Routing & Signal Emission
-│   ├── client.py       # Connection, Base64 File Serializer & Transmission logic
-│   └── discovery.py    # Global peer registry
+│   ├── server.py       # Handshake, routing, file handling
+│   ├── client.py       # Sending messages + file transfers
+│   └── discovery.py    # Peer discovery + registry
 │
 ├── security/
-│   ├── keys.py         # Public & private key generation
-│   └── crypto.py       # Hashing, and filename management
-│   
+│   ├── keys.py         # Key generation & loading
+│   └── crypto.py       # Cryptographic utilities
+│
 └── storage/
-    └── database.py     # SQLite history (get_history, save_message)
-
+    └── database.py     # SQLite persistence layer (timestamps included)
 ```
 
 ---
 
 # Running PeerChat
 
-When setting up a project simulation rather than connecting to an established network, ensure that the bootstrap peers are initialized first.
-
 ## Install Dependencies
 
 ```bash
 pip install pyqt6 cryptography
-
 ```
+
+---
 
 ## Running Multiple Instances
 
-To run peers locally, provide the **Port** and **Username** as arguments. The system will automatically generate or load keys for that username.
-
-**Terminal 1 (Alice):**
+### Terminal 1
 
 ```bash
 python main.py 9000 Alice
-
 ```
 
-**Terminal 2 (Bob):**
+### Terminal 2
 
 ```bash
 python main.py 9001 Bob
-
 ```
 
-**Terminal 3 (Charlie):**
+### Terminal 3
 
 ```bash
 python main.py 9002 Charlie
-
 ```
+
+---
+
 # Bootstrap Peers Configuration
 
-PeerChat relies on a set of bootstrap peers to discover and connect to the network. These peers are currently defined in `network/discovery.py` as:
+PeerChat uses bootstrap peers to initialize network discovery.
+
+These are defined in `network/discovery.py`:
 
 ```python
 BOOTSTRAP_PEERS = [
@@ -221,9 +241,9 @@ BOOTSTRAP_PEERS = [
 ]
 ```
 
-When deploying PeerChat on a Local Area Network (LAN), you should modify the IP addresses to match the machines that will act as initial bootstrap nodes on your network.
+## LAN Setup
 
-For example, if two peers are running on a machine with LAN IP `192.168.1.50`, you might configure:
+For local network deployment, replace IPs with the LAN address of your machines:
 
 ```python
 BOOTSTRAP_PEERS = [
@@ -232,13 +252,7 @@ BOOTSTRAP_PEERS = [
 ]
 ```
 
-For local testing on a single machine, you can connect through the localhost bootstrap peer:
-
-```python
-("127.0.0.1", 9002)
-```
-
-or add additional localhost entries:
+## Local Testing (Single Machine)
 
 ```python
 BOOTSTRAP_PEERS = [
@@ -248,18 +262,21 @@ BOOTSTRAP_PEERS = [
 ]
 ```
 
-At least one bootstrap peer must be online and reachable for new nodes to discover and join the network successfully. Once connected, PeerChat automatically exchanges peer information and expands the network through its peer discovery mechanism.
+At least one bootstrap peer must be online for initial network discovery. Once connected, peers automatically exchange routing information and expand the network.
 
 ---
 
 # Planned Improvements
 
-* **E2EE Messaging:** Encrypting message payloads and file buffers natively with RSA Public Keys/AES-GCM before transport serialization.
-* **NAT Traversal:** UDP hole punching and STUN support for over-the-internet P2P swarming.
-* **Advanced UI:** Unread message indicators and visual file transfer progress bars.
+* Message delivery status indicators (✓ / ✓✓)
+* Unread message counters
+* Typing indicators
+* File transfer progress bars
 
 ---
 
 # License
 
 MIT License. See `LICENSE` for details.
+
+---
