@@ -218,8 +218,8 @@ class ChatWindow(QWidget):
         target = None if self.current_chat_target == "Global Chat" else self.current_chat_target
 
         history = get_history(target)
-        for sender, message in history:
-            self.append_to_ui(sender, message)
+        for sender, message, timestamp in history:
+            self.append_to_ui(sender, f"[{timestamp}] {message}")
 
     def send_message(self):
         text = self.input_box.text().strip()

@@ -9,11 +9,10 @@ def get_db_name():
 
 
 def get_db_connection():
-    """Opens a connection and dynamically ensures the schema exists before returning."""
+    """Opens a connection and ensures schema exists."""
     db_name = get_db_name()
     conn = sqlite3.connect(db_name, check_same_thread=False, timeout=10)
 
-    # Force schema creation verification on the active file context
     cursor = conn.cursor()
     cursor.execute("""
     CREATE TABLE IF NOT EXISTS messages(
@@ -21,7 +20,8 @@ def get_db_connection():
         msg_hash TEXT UNIQUE,
         sender TEXT,
         recipient TEXT,
-        message TEXT
+        message TEXT,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
     )
     """)
     conn.commit()
@@ -33,37 +33,45 @@ def save_message(sender, message, recipient=None):
         recipient = None
 
     raw_payload = f"{sender}:{recipient or 'Global'}:{message.strip()}"
-    msg_hash = hashlib.sha256(raw_payload.encode('utf-8')).hexdigest()
+    msg_hash = hashlib.sha256(raw_payload.encode("utf-8")).hexdigest()
 
-    # Get connection (this automatically ensures the table exists)
     conn = get_db_connection()
     cursor = conn.cursor()
 
     try:
-        cursor.execute(
-            "INSERT OR IGNORE INTO messages (msg_hash, sender, message, recipient) VALUES (?, ?, ?, ?)",
-            (msg_hash, sender, message, recipient)
-        )
+        cursor.execute("""
+            INSERT OR IGNORE INTO messages 
+            (msg_hash, sender, message, recipient) 
+            VALUES (?, ?, ?, ?)
+        """, (msg_hash, sender, message, recipient))
+
         conn.commit()
+
     except Exception as e:
         print(f"[DB_ERROR] Failed to save message: {e}")
+
     finally:
         conn.close()
 
 
 def get_history(target_peer=None):
-    # Get connection (this automatically ensures the table exists)
     conn = get_db_connection()
     cursor = conn.cursor()
     my_id = config.PEER_ID
 
     if target_peer is None or target_peer == "Global Chat":
-        cursor.execute("SELECT sender, message FROM messages WHERE recipient IS NULL ORDER BY id ASC")
+        cursor.execute("""
+            SELECT sender, message, timestamp
+            FROM messages
+            WHERE recipient IS NULL
+            ORDER BY id ASC
+        """)
     else:
         cursor.execute("""
-            SELECT sender, message FROM messages 
-            WHERE (sender = ? AND recipient = ?) 
-            OR (sender = ? AND recipient = ?)
+            SELECT sender, message, timestamp
+            FROM messages
+            WHERE (sender = ? AND recipient = ?)
+               OR (sender = ? AND recipient = ?)
             ORDER BY id ASC
         """, (my_id, target_peer, target_peer, my_id))
 
@@ -71,40 +79,24 @@ def get_history(target_peer=None):
     conn.close()
     return rows
 
+
 def get_all_chat_peers():
     """
     Returns every peer we've ever exchanged messages with.
-    Used to populate the sidebar even when peers are offline.
+    Used for showing offline + online peers in UI.
     """
     conn = get_db_connection()
     cursor = conn.cursor()
 
     peers = set()
 
-    # People who sent us messages
-    cursor.execute("""
-        SELECT DISTINCT sender
-        FROM messages
-        WHERE sender IS NOT NULL
-    """)
+    cursor.execute("SELECT sender, recipient FROM messages")
 
-    for (sender,) in cursor.fetchall():
+    for sender, recipient in cursor.fetchall():
         if sender and sender != config.PEER_ID:
             peers.add(sender)
-
-    # People we sent messages to
-    cursor.execute("""
-        SELECT DISTINCT recipient
-        FROM messages
-        WHERE recipient IS NOT NULL
-    """)
-
-    for (recipient,) in cursor.fetchall():
         if recipient and recipient != config.PEER_ID:
             peers.add(recipient)
 
-
-
     conn.close()
-
     return sorted(peers)
