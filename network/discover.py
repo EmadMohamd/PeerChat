@@ -26,7 +26,7 @@ def get_local_ip():
 
 MY_LAN_IP = get_local_ip()
 
-BOOTSTRAP_PEERS = [("192.168.1.41", 9000), ("192.168.1.41", 9001), ("127.0.0.1", 9002)]
+BOOTSTRAP_PEERS = [("192.168.1.2", 9000), ("192.168.1.3", 9001), ("127.0.0.1", 9002)]
 
 
 def add_known_peer(ip, port):

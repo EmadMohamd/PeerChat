@@ -8,7 +8,6 @@ The system supports:
 * Automatic peer discovery across LAN and local environments
 * RSA-based challenge-response authentication
 * Persistent message history with timestamps
-* Online/offline peer visibility tracking
 * File transfer via Base64-encoded packets
 * Modernized, smooth-corner PyQt6 user interface with localized startup configuration view
 
@@ -74,6 +73,7 @@ This marks the first stable release of PeerChat, moving the project from a comma
 * JSON-based message protocol for structured routing
 * Local persistence of all messages and file references
 * Timestamped message history for accurate chronological reconstruction
+* Received files are automatically saved to the downloads/ directory
 
 ---
 
@@ -92,8 +92,7 @@ The interface has been fully updated to a sleek, modern visual aesthetic based o
 * **Enhanced Peer List:** Bold, high-contrast typography displaying active peer statuses against rich background blocks for excellent visibility.
 * **Integrated Control Panels:** The attachment clip button (`📎`) and message entry boxes are seamlessly styled side-by-side inside custom inner frames.
 * **Real-Time Indicators:** Real-time online/offline peer visibility tracking:
-* 🟢 Online (currently connected)
-* ⚫ Offline (seen before but not currently connected)
+* **Online (currently connected)**
 
 
 
@@ -197,6 +196,12 @@ peerchat/
 ├── main.py             # Entry point (Launches Configuration GUI or parses fallback args)
 ├── config.py           # Runtime settings (Peer ID, Port, Username)
 │
+├── assets/             # Static UI resources (icons, logos, images)
+│   ├── logo.ico
+│   ├── logo.svg
+│   ├── peerchat.ico
+│   └── peerchat.svg
+│
 ├── keys/               # RSA key storage per user
 │   ├── Alice_private.pem
 │   └── Alice_public.pem
@@ -254,27 +259,41 @@ The entry system retains full backward compatibility for command-line arguments:
 ### Terminal 1
 
 ```bash
-python main.py 9000 Alice
+python main.py 9000 Bootstrap_node
 
 ```
 
 ### Terminal 2
 
 ```bash
-python main.py 9001 Bob
+python main.py 9001 Bootstrap_node_1
+
+```
+### Terminal 3
+
+```bash
+python main.py 9002 Bootstrap_node_2
 
 ```
 
+And then after initializing the Bootstrap peers you can start your peers
+
+### Terminal 4
+
+```bash
+python main.py <Port> <Username>
+
+```
 ---
 
 # Bootstrap Peers Configuration
 
-PeerChat uses bootstrap peers to initialize network discovery. These are defined in `network/discovery.py`:
+PeerChat uses default bootstrap peers config to initialize network discovery. These are defined in `network/discovery.py`:
 
 ```python
 BOOTSTRAP_PEERS = [
-    ("192.168.1.41", 9000),
-    ("192.168.1.41", 9001),
+    ("192.168.1.2", 9000),
+    ("192.168.1.3", 9001),
     ("127.0.0.1", 9002)
 ]
 
@@ -282,12 +301,12 @@ BOOTSTRAP_PEERS = [
 
 ## LAN Setup
 
-For local network deployment, replace IPs with the LAN address of your machines:
+For local network deployment, replace IPs with the LAN address of your machines with these or you can choose your desired ip's:
 
 ```python
 BOOTSTRAP_PEERS = [
-    ("192.168.1.50", 9000),
-    ("192.168.1.50", 9001)
+    ("192.168.1.2", 9000),
+    ("192.168.1.3", 9001)
 ]
 
 ```
