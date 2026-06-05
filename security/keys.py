@@ -1,12 +1,22 @@
 import hashlib
 import config
-import os
+import sys
 from pathlib import Path
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 
-BASE_DIR = Path(__file__).resolve().parent.parent
+# 1. Check if the app is running as a compiled PyInstaller EXE
+if getattr(sys, 'frozen', False):
+    # sys._MEIPASS is the temp folder, but we want the directory where the actual EXE lives
+    BASE_DIR = Path(sys.argv[0]).resolve().parent
+else:
+    # Standard raw Python execution
+    BASE_DIR = Path(__file__).resolve().parent.parent
+
 KEYS_DIR = BASE_DIR / "keys"
+
+# 2. Force the creation of the folder right next to the EXE
+KEYS_DIR.mkdir(parents=True, exist_ok=True)
 
 
 # --- HELPER LOGIC ---
@@ -80,6 +90,7 @@ def pem_to_public_key(pem_data):
 
 
 def ensure_keys_exist():
+    KEYS_DIR.mkdir(parents=True, exist_ok=True)
     """Generates keys if missing and updates config.PEER_ID."""
     paths = get_paths()
 
