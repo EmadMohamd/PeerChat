@@ -1,145 +1,392 @@
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QTextEdit,
     QLineEdit, QPushButton, QLabel, QListWidget, QSplitter,
-    QFileDialog  # ADDED: For picking files
+    QFileDialog, QFrame
 )
-from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtCore import Qt, QTimer, QSize, QPointF, QRectF
+from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QPainterPath, QPixmap
 from gui.signals import event_bus
-from network.client import send_chat_message, send_file_attachment  # ADDED: Network helper
+from network.client import send_chat_message, send_file_attachment
 from storage.database import get_history, save_message, get_all_chat_peers
 import config
 
 
+# ── Inline logo widget ─────────────────────────────────────────────────────────
+class PeerChatLogo(QWidget):
+    """Draws the PeerChat logo inline using QPainter — no image file required."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(216, 68)
+
+    def paintEvent(self, event):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        blue       = QColor("#89b4fa")
+        dim        = QColor("#313244")
+        dim_line   = QColor("#2a2a3d")
+        text_main  = QColor("#cdd6f4")
+
+        cx, cy = 108, 28
+
+        # ── satellite nodes (dim, dashed) ─────────────────────────
+        pen_dim = QPen(dim_line, 1.2, Qt.PenStyle.DashLine)
+        p.setPen(pen_dim)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+
+        satellites = [(-52, -18), (-52, 18), (52, -18), (52, 18)]
+        anchors    = [(-26, 0),   (-26, 0),  (26, 0),   (26, 0)]
+        for (sx, sy), (ax, ay) in zip(satellites, anchors):
+            p.drawLine(
+                int(cx + ax), int(cy + ay),
+                int(cx + sx), int(cy + sy)
+            )
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(dim))
+        for sx, sy in satellites:
+            p.drawEllipse(QPointF(cx + sx, cy + sy), 3.5, 3.5)
+
+        # ── center dim node ────────────────────────────────────────
+        p.setBrush(QBrush(dim))
+        p.setPen(Qt.PenStyle.NoPen)
+        p.drawEllipse(QPointF(cx, cy), 3.5, 3.5)
+
+        # ── connector lines ────────────────────────────────────────
+        pen_solid = QPen(blue, 1.5)
+        p.setPen(pen_solid)
+        p.drawLine(int(cx - 26), int(cy), int(cx - 14), int(cy))
+        p.drawLine(int(cx + 14), int(cy), int(cx + 26), int(cy))
+
+        # dim centre gap
+        pen_gap = QPen(dim_line, 1.5, Qt.PenStyle.DashLine)
+        p.setPen(pen_gap)
+        p.drawLine(int(cx - 14), int(cy), int(cx + 14), int(cy))
+
+        # ── primary nodes (ringed) ─────────────────────────────────
+        pen_ring = QPen(blue, 1.8)
+        p.setPen(pen_ring)
+        p.setBrush(Qt.BrushStyle.NoBrush)
+        for nx in (-26, 26):
+            p.drawEllipse(QPointF(cx + nx, cy), 10, 10)
+
+        p.setPen(Qt.PenStyle.NoPen)
+        p.setBrush(QBrush(blue))
+        for nx in (-26, 26):
+            p.drawEllipse(QPointF(cx + nx, cy), 4, 4)
+
+        # ── wordmark ───────────────────────────────────────────────
+        font_peer = QFont("Segoe UI", 15, QFont.Weight.ExtraBold)
+        font_chat = QFont("Segoe UI", 15, QFont.Weight.ExtraBold)
+
+        p.setFont(font_peer)
+        p.setPen(QPen(text_main))
+        p.drawText(QRectF(0, 40, 108, 26), Qt.AlignmentFlag.AlignRight, "Peer")
+
+        p.setFont(font_chat)
+        p.setPen(QPen(blue))
+        p.drawText(QRectF(108, 40, 108, 26), Qt.AlignmentFlag.AlignLeft, "Chat")
+
+        p.end()
+
+
+# ── Main chat window ───────────────────────────────────────────────────────────
 class ChatWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PeerChat")
-        self.resize(900, 650)
+        self.setMinimumSize(860, 580)
+        self.showMaximized()
 
-        # State management
         self.current_chat_target = "Global Chat"
-
-        # GUI Deduplication tracking to prevent signal echos
         self.recent_rendered_messages = set()
 
         self.init_ui()
 
-        # Connect network signals safely
         event_bus.message_received.connect(self.handle_incoming_signal)
 
-        # Peer list refresh timer
         self.refresh_timer = QTimer()
         self.refresh_timer.timeout.connect(self.update_peer_list)
         self.refresh_timer.start(2000)
 
-        # Load initial Global Chat history on startup
         self.load_history_from_db()
 
     def init_ui(self):
         self.setStyleSheet("""
-            QWidget { background-color: #1e1e2e; color: #cdd6f4; font-family: 'Segoe UI', sans-serif; }
-            QTextEdit { background-color: #181825; border-radius: 10px; border: 1px solid #313244; padding: 10px; font-size: 14px; }
-            QListWidget { background-color: #181825; border-radius: 10px; border: 1px solid #313244; outline: none; }
-            QListWidget::item { padding: 12px; border-bottom: 1px solid #313244; color: #a6adc8; }
-            QListWidget::item:selected { background-color: #89b4fa; color: #11111b; border-radius: 5px; }
-            QLineEdit { background-color: #313244; border-radius: 15px; padding: 10px 15px; border: 1px solid #45475a; }
-            QPushButton { background-color: #89b4fa; color: #11111b; border-radius: 15px; padding: 10px 25px; font-weight: bold; }
-            QPushButton:hover { background-color: #b4befe; }
-
-            /* ADDED: Attachment Button Styling */
-            QPushButton#AttachButton { 
-                background-color: #313244; 
-                color: #b4befe; 
-                font-size: 18px; 
-                border-radius: 15px; 
-                padding: 5px 15px; 
-                border: 1px solid #45475a;
+            /* ── BASE ─────────────────────────────────────────────── */
+            QWidget {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+                font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
             }
-            QPushButton#AttachButton:hover { background-color: #45475a; color: #89b4fa; }
 
-            #AppTitle { font-size: 24px; font-weight: bold; color: #89b4fa; }
-            #MyIDLabel { color: #9399b2; font-size: 17px; }
-            #ChatStatus { font-size: 16px; font-weight: bold; color: #fab387; }
-            #SidebarHeader { font-weight: bold; color: #585b70; font-size: 11px; margin-bottom: 5px; }
+            /* ── SPLITTER ─────────────────────────────────────────── */
+            QSplitter::handle {
+                background-color: #2a2a3d;
+                width: 1px;
+            }
+
+            /* ── SIDEBAR LIST ─────────────────────────────────────── */
+            QListWidget {
+                background-color: transparent;
+                border: none;
+                padding: 4px 0px;
+                outline: none;
+            }
+            QListWidget::item {
+                padding: 13px 18px;
+                margin: 3px 6px;
+                border-radius: 10px;
+                color: #7f849c;
+                font-size: 13px;
+                font-weight: 500;
+            }
+            QListWidget::item:hover {
+                background-color: #1e1e2e;
+                color: #cdd6f4;
+            }
+            QListWidget::item:selected {
+                background-color: #1e3a5f;
+                color: #89b4fa;
+                font-weight: 700;
+            }
+
+            /* ── CHAT DISPLAY ─────────────────────────────────────── */
+            QTextEdit {
+                background-color: #11111b;
+                border-radius: 16px;
+                border: 1px solid #2a2a3d;
+                padding: 18px 20px;
+                font-size: 13px;
+                line-height: 1.6;
+                color: #cdd6f4;
+            }
+            QTextEdit QScrollBar:vertical {
+                background: transparent;
+                width: 6px;
+                margin: 4px 0;
+            }
+            QTextEdit QScrollBar::handle:vertical {
+                background: #313244;
+                border-radius: 3px;
+                min-height: 20px;
+            }
+            QTextEdit QScrollBar::add-line:vertical,
+            QTextEdit QScrollBar::sub-line:vertical {
+                height: 0px;
+            }
+
+            /* ── INPUT ────────────────────────────────────────────── */
+            QLineEdit {
+                background-color: #11111b;
+                border-radius: 14px;
+                padding: 12px 18px;
+                border: 1.5px solid #2a2a3d;
+                font-size: 13px;
+                color: #cdd6f4;
+                font-weight: 400;
+            }
+            QLineEdit:focus {
+                border: 1.5px solid #89b4fa;
+                background-color: #13131f;
+            }
+            QLineEdit::placeholder {
+                color: #45475a;
+            }
+
+            /* ── BUTTONS ──────────────────────────────────────────── */
+            QPushButton#SendButton {
+                background-color: #89b4fa;
+                color: #11111b;
+                border-radius: 14px;
+                padding: 12px 26px;
+                font-weight: 800;
+                font-size: 13px;
+                border: none;
+            }
+            QPushButton#SendButton:hover  { background-color: #a6c8ff; }
+            QPushButton#SendButton:pressed { background-color: #74a8f8; }
+
+            QPushButton#AttachButton {
+                background-color: #181825;
+                color: #6c7086;
+                font-size: 16px;
+                border-radius: 14px;
+                padding: 10px 16px;
+                border: 1.5px solid #2a2a3d;
+            }
+            QPushButton#AttachButton:hover {
+                background-color: #1e1e2e;
+                color: #89b4fa;
+                border-color: #89b4fa;
+            }
+
+            /* ── LABELS ───────────────────────────────────────────── */
+            QLabel#MyIDLabel {
+                color: #6c7086;
+                font-size: 12px;
+                font-weight: 400;
+            }
+            QLabel#ChatStatus {
+                font-size: 15px;
+                font-weight: 700;
+                color: #cdd6f4;
+            }
+            QLabel#ChatStatusSub {
+                font-size: 12px;
+                color: #7f849c;
+                font-weight: 400;
+            }
+            QLabel#SidebarHeader {
+                font-weight: 700;
+                color: #6c7086;
+                font-size: 10px;
+                letter-spacing: 1.2px;
+                padding-left: 6px;
+            }
+            QLabel#OnlineIndicator {
+                color: #a6e3a1;
+                font-size: 11px;
+                font-weight: 600;
+                letter-spacing: 0.3px;
+            }
+
+            /* ── DIVIDER ──────────────────────────────────────────── */
+            QFrame#Divider {
+                background-color: #2a2a3d;
+                max-height: 1px;
+            }
         """)
 
-        layout = QHBoxLayout(self)
-        splitter = QSplitter(Qt.Orientation.Horizontal)
+        root = QHBoxLayout(self)
+        root.setContentsMargins(0, 0, 0, 0)
+        root.setSpacing(0)
 
-        # --- SIDEBAR SECTION ---
-        sidebar_widget = QWidget()
-        sidebar_layout = QVBoxLayout(sidebar_widget)
-        sidebar_header = QLabel("ONLINE PEERS")
-        sidebar_header.setObjectName("SidebarHeader")
+        splitter = QSplitter(Qt.Orientation.Horizontal)
+        splitter.setHandleWidth(1)
+
+        # ── SIDEBAR ────────────────────────────────────────────────
+        sidebar = QWidget()
+        sidebar.setFixedWidth(252)
+        sidebar.setStyleSheet("background-color: #11111b;")
+        sl = QVBoxLayout(sidebar)
+        sl.setContentsMargins(16, 22, 16, 20)
+        sl.setSpacing(10)
+
+        # Logo
+        logo = PeerChatLogo()
+        logo_row = QHBoxLayout()
+        logo_row.addWidget(logo)
+        logo_row.addStretch()
+
+        my_id = QLabel(f"@{config.PEER_ID}")
+        my_id.setObjectName("MyIDLabel")
+
+        divider_top = QFrame()
+        divider_top.setObjectName("Divider")
+        divider_top.setFrameShape(QFrame.Shape.HLine)
+
+        ch_header = QLabel("CHANNELS & PEERS")
+        ch_header.setObjectName("SidebarHeader")
 
         self.peer_list_widget = QListWidget()
         self.peer_list_widget.addItem("Global Chat")
         self.peer_list_widget.setCurrentRow(0)
         self.peer_list_widget.itemClicked.connect(self.switch_chat_context)
 
-        sidebar_layout.addWidget(sidebar_header)
-        sidebar_layout.addWidget(self.peer_list_widget)
+        sl.addLayout(logo_row)
+        sl.addWidget(my_id)
+        sl.addSpacing(6)
+        sl.addWidget(divider_top)
+        sl.addSpacing(6)
+        sl.addWidget(ch_header)
+        sl.addWidget(self.peer_list_widget)
 
-        # --- MAIN CHAT SECTION ---
-        chat_container = QWidget()
-        chat_layout = QVBoxLayout(chat_container)
+        # ── MAIN CHAT AREA ─────────────────────────────────────────
+        chat_area = QWidget()
+        cl = QVBoxLayout(chat_area)
+        cl.setContentsMargins(20, 20, 20, 20)
+        cl.setSpacing(14)
 
-        header_bar = QHBoxLayout()
-        app_name = QLabel("Peer Chat")
-        app_name.setObjectName("AppTitle")
+        # Chat header
+        chat_header_row = QHBoxLayout()
+        chat_header_row.setSpacing(10)
 
-        my_id_info = QLabel(f"<b>You:</b> <b style='color: #f5e0dc;'>{config.PEER_ID}</b>")
-        my_id_info.setObjectName("MyIDLabel")
-        my_id_info.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-
-        header_bar.addWidget(app_name)
-        header_bar.addStretch()
-        header_bar.addWidget(my_id_info)
+        chat_header_left = QVBoxLayout()
+        chat_header_left.setSpacing(2)
 
         self.chat_status_label = QLabel("Global Chat")
         self.chat_status_label.setObjectName("ChatStatus")
 
+        self.chat_status_sub = QLabel("Public channel · all peers")
+        self.chat_status_sub.setObjectName("ChatStatusSub")
+
+        chat_header_left.addWidget(self.chat_status_label)
+        chat_header_left.addWidget(self.chat_status_sub)
+
+        self.online_indicator = QLabel("")
+        self.online_indicator.setObjectName("OnlineIndicator")
+        self.online_indicator.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+
+        chat_header_row.addLayout(chat_header_left)
+        chat_header_row.addStretch()
+        chat_header_row.addWidget(self.online_indicator)
+
+        divider_chat = QFrame()
+        divider_chat.setObjectName("Divider")
+        divider_chat.setFrameShape(QFrame.Shape.HLine)
+
+        # Message display
         self.chat_box = QTextEdit()
         self.chat_box.setReadOnly(True)
 
-        input_container = QHBoxLayout()
+        # Input row
+        input_row = QHBoxLayout()
+        input_row.setSpacing(10)
 
-        # ADDED: Attachment Icon Button
         self.attach_button = QPushButton("📎")
         self.attach_button.setObjectName("AttachButton")
+        self.attach_button.setFixedSize(46, 46)
+        self.attach_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.attach_button.clicked.connect(self.attach_file)
 
         self.input_box = QLineEdit()
-        self.input_box.setPlaceholderText("Type your message here...")
+        self.input_box.setMinimumHeight(46)
+        self.input_box.setPlaceholderText("Message your peers...")
         self.input_box.returnPressed.connect(self.send_message)
 
         self.send_button = QPushButton("Send")
+        self.send_button.setObjectName("SendButton")
+        self.send_button.setMinimumHeight(46)
+        self.send_button.setFixedWidth(90)
+        self.send_button.setCursor(Qt.CursorShape.PointingHandCursor)
         self.send_button.clicked.connect(self.send_message)
 
-        # CHANGED: Insert attach button before the message line edit
-        input_container.addWidget(self.attach_button)
-        input_container.addWidget(self.input_box)
-        input_container.addWidget(self.send_button)
+        input_row.addWidget(self.attach_button)
+        input_row.addWidget(self.input_box)
+        input_row.addWidget(self.send_button)
 
-        chat_layout.addLayout(header_bar)
-        chat_layout.addWidget(self.chat_status_label)
-        chat_layout.addWidget(self.chat_box)
-        chat_layout.addLayout(input_container)
+        cl.addLayout(chat_header_row)
+        cl.addWidget(divider_chat)
+        cl.addWidget(self.chat_box)
+        cl.addLayout(input_row)
 
-        splitter.addWidget(sidebar_widget)
-        splitter.addWidget(chat_container)
-        splitter.setSizes([200, 700])
-        layout.addWidget(splitter)
+        splitter.addWidget(sidebar)
+        splitter.addWidget(chat_area)
+        splitter.setStretchFactor(0, 0)
+        splitter.setStretchFactor(1, 1)
 
-    # ADDED: Method to handle selecting and triggering file transfers
+        root.addWidget(splitter)
+
+    # ── Logic ──────────────────────────────────────────────────────
+
     def attach_file(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Select File", "", "All Files (*)")
         if not file_path:
             return
-
         recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
         file_name = send_file_attachment(file_path, recipient)
-
         if file_name:
             display_msg = f"📎 Sent a file: {file_name}"
             save_message(config.PEER_ID, display_msg, recipient)
@@ -147,140 +394,100 @@ class ChatWindow(QWidget):
 
     def update_peer_list(self):
         from network.discover import peer_ids
-
         current_item = self.peer_list_widget.currentItem()
-
-        if current_item:
-            selected_name = (
-                current_item.text().rsplit(" ", 1)[0]
-                if current_item.text() != "Global Chat"
-                else "Global Chat"
-            )
-        else:
-            selected_name = "Global Chat"
-
+        selected_name = (
+            current_item.text()
+            if current_item and current_item.text() != "Global Chat"
+            else "Global Chat"
+        )
         self.peer_list_widget.clear()
         self.peer_list_widget.addItem("Global Chat")
-
-        # Currently online peers
         online_peers = {
-            str(pid)
-            for pid in peer_ids.values()
-            if str(pid) != str(config.PEER_ID)
+            str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)
         }
-
-        # Peers from chat history
         historical_peers = set(get_all_chat_peers())
+        for peer in sorted(historical_peers | online_peers):
+            self.peer_list_widget.addItem(peer)
 
-
-        # Show both online and offline peers
-        all_peers = sorted(historical_peers | online_peers)
-
-        for peer in all_peers:
-            status = "🟢" if peer in online_peers else "⚫"
-            self.peer_list_widget.addItem(f"{peer} {status}")
-
-        # Restore previous selection
-        if selected_name == "Global Chat":
-            items = self.peer_list_widget.findItems(
-                "Global Chat",
-                Qt.MatchFlag.MatchExactly
-            )
-        else:
-            items = self.peer_list_widget.findItems(
-                selected_name,
-                Qt.MatchFlag.MatchStartsWith
+        if self.current_chat_target != "Global Chat":
+            self.online_indicator.setText(
+                "● online" if self.current_chat_target in online_peers else ""
             )
 
+        items = (
+            self.peer_list_widget.findItems("Global Chat", Qt.MatchFlag.MatchExactly)
+            if selected_name == "Global Chat"
+            else self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchExactly)
+        )
         if items:
             self.peer_list_widget.setCurrentItem(items[0])
 
     def switch_chat_context(self, item):
         text = item.text()
-
         if text == "Global Chat":
             self.current_chat_target = "Global Chat"
-        else:
-            # Remove online/offline indicator
-            self.current_chat_target = text.rsplit(" ", 1)[0]
-
-        if self.current_chat_target == "Global Chat":
             self.chat_status_label.setText("Global Chat")
+            self.chat_status_sub.setText("Public channel · all peers")
+            self.online_indicator.setText("")
         else:
-            self.chat_status_label.setText(
-                f"Private Chat: {self.current_chat_target}"
-            )
-
+            from network.discover import peer_ids
+            online_peers = {str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)}
+            self.current_chat_target = text
+            self.chat_status_label.setText(text)
+            self.chat_status_sub.setText("Private conversation · end-to-end")
+            self.online_indicator.setText("● online" if text in online_peers else "")
         self.load_history_from_db()
 
     def load_history_from_db(self):
         self.chat_box.clear()
         target = None if self.current_chat_target == "Global Chat" else self.current_chat_target
-
-        history = get_history(target)
-        for sender, message, timestamp in history:
+        for sender, message, timestamp in get_history(target):
             self.append_to_ui(sender, f"[{timestamp}] {message}")
 
     def send_message(self):
         text = self.input_box.text().strip()
         if not text:
             return
-
         recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
-
-        # 1. Send via network wire
         send_chat_message(text, recipient)
-
-        # 2. Save directly to database
         save_message(config.PEER_ID, text, recipient)
-
-        # 3. Direct local print fallback for instantly responsive local context rendering
         self.append_to_ui(config.PEER_ID, text)
-
         self.input_box.clear()
 
     def handle_incoming_signal(self, sender, message, recipient):
-        """Processes signals and drops echo duplicates coming from loopback threads."""
-        # Drop if it's an echo signature of a message we just processed locally
-        msg_signature = f"{sender}:{recipient}:{message}"
-        if msg_signature in self.recent_rendered_messages:
+        sig = f"{sender}:{recipient}:{message}"
+        if sig in self.recent_rendered_messages:
             return
-
-        # Add to local short-term cache filter
-        self.recent_rendered_messages.add(msg_signature)
-        QTimer.singleShot(3000, lambda: self.recent_rendered_messages.discard(msg_signature))
-
-        # Do not render if we sent it (send_message already appended it locally)
+        self.recent_rendered_messages.add(sig)
+        QTimer.singleShot(3000, lambda: self.recent_rendered_messages.discard(sig))
         if sender == config.PEER_ID:
             return
-
-        is_global_msg = (recipient is None)
-
-        show_now = False
-        if is_global_msg and self.current_chat_target == "Global Chat":
-            show_now = True
-        elif recipient == config.PEER_ID and sender == self.current_chat_target:
-            show_now = True
-        elif sender == config.PEER_ID and recipient == self.current_chat_target:
-            show_now = True
-
-        if show_now:
+        show = (
+            (recipient is None and self.current_chat_target == "Global Chat") or
+            (recipient == config.PEER_ID and sender == self.current_chat_target) or
+            (sender == config.PEER_ID and recipient == self.current_chat_target)
+        )
+        if show:
             self.append_to_ui(sender, message)
 
     def append_to_ui(self, sender, message):
-        is_me = (sender == config.PEER_ID)
+        is_me = sender == config.PEER_ID
         color = "#f5c2e7" if is_me else "#89b4fa"
-        sender_label = "You" if is_me else sender
+        label = "You" if is_me else sender
 
-        # CHANGED: Added distinct background formatting if the message contains a file attachment icon
         if "📎" in message:
-            formatted = f"<div style='margin-bottom: 8px; padding: 4px 8px; background-color: #252434; border-radius: 6px;'><b style='color: {color};'>{sender_label}:</b> <span style='color: #a6e3a1;'>{message}</span></div>"
+            formatted = (
+                f"<div style='margin: 6px 0; padding: 12px 16px; "
+                f"background-color: #1a2535; border-left: 3px solid #a6e3a1; border-radius: 10px;'>"
+                f"<span style='color: {color}; font-weight: 700; font-size: 13px;'>{label}</span><br/>"
+                f"<span style='color: #a6e3a1; font-size: 14px;'>{message}</span></div>"
+            )
         else:
-            formatted = f"<div style='margin-bottom: 8px;'><b style='color: {color};'>{sender_label}:</b> {message}</div>"
+            formatted = (
+                f"<div style='margin: 5px 0; padding: 2px 0;'>"
+                f"<span style='color: {color}; font-weight: 700; font-size: 13px;'>{label}</span>"
+                f"&nbsp;<span style='color: #cdd6f4; font-size: 14px;'>{message}</span></div>"
+            )
 
         self.chat_box.append(formatted)
-        self.scroll_to_bottom()
-
-    def scroll_to_bottom(self):
-        scrollbar = self.chat_box.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        self.chat_box.verticalScrollBar().setValue(self.chat_box.verticalScrollBar().maximum())
