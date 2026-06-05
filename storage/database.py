@@ -5,7 +5,7 @@ import config
 
 def get_db_name():
     """Generates a unique database name per instance based on its active port."""
-    return f"chat_{config.PORT}.db"
+    return f"chat_{config.USERNAME}.db"
 
 
 def get_db_connection():
