@@ -8,3 +8,6 @@
 *.pyc
 
 .idea/
+
+build/
+dist/
