@@ -19,12 +19,6 @@ The system supports:
 
 This marks the first stable release of PeerChat, moving the project from a command-line proof-of-concept to a fully-realized desktop application with a modern graphical interface.
 
-### Release Notes
-
-* **Standalone Executables:** Packaged binaries for quick deployment without needing a local Python environment.
-* **Cryptographic Identity Core:** Fully integrated the RSA key generation and challenge-response handshake to eliminate traditional password systems.
-* **Anti-Flicker GUI Engine:** Implemented locked structural layouts in PyQt6 to ensure a glitch-free configuration startup sequence.
-* **Cross-Platform File Exchange:** Validated Base64-encoded file chunking for seamless document sharing between different operating systems.
 
 ### Binary Downloads
 
