@@ -3,7 +3,7 @@ from PyQt6.QtWidgets import (
     QLineEdit, QPushButton, QLabel, QListWidget, QSplitter,
     QFileDialog, QFrame
 )
-from PyQt6.QtCore import Qt, QTimer, QSize, QPointF, QRectF
+from PyQt6.QtCore import Qt, QTimer, QSize, QPointF, QRectF, QDateTime
 from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QPainterPath, QPixmap
 from gui.signals import event_bus
 from network.client import send_chat_message, send_file_attachment
@@ -390,7 +390,9 @@ class ChatWindow(QWidget):
         if file_name:
             display_msg = f"📎 Sent a file: {file_name}"
             save_message(config.PEER_ID, display_msg, recipient)
-            self.append_to_ui(config.PEER_ID, display_msg)
+
+            timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+            self.append_to_ui(config.PEER_ID, f"[{timestamp}] {display_msg}")
 
     def update_peer_list(self):
         from network.discover import peer_ids
@@ -402,7 +404,6 @@ class ChatWindow(QWidget):
         )
         self.peer_list_widget.clear()
 
-        # Add Global Chat with unread counter
         global_unread = get_unread_count("Global Chat")
         global_text = "Global Chat"
         if global_unread > 0:
@@ -435,7 +436,6 @@ class ChatWindow(QWidget):
 
     def switch_chat_context(self, item):
         text = item.text()
-        # Extract the peer name without the unread counter
         peer_name = text.split(" (")[0] if " (" in text else text
 
         if peer_name == "Global Chat":
@@ -451,10 +451,8 @@ class ChatWindow(QWidget):
             self.chat_status_sub.setText("Private conversation · end-to-end")
             self.online_indicator.setText("● online" if peer_name in online_peers else "")
 
-        # Mark messages as read when switching to this context
         mark_as_read(self.current_chat_target)
         self.load_history_from_db()
-        # Update the peer list to remove the unread counter
         self.update_peer_list()
 
     def load_history_from_db(self):
@@ -470,7 +468,9 @@ class ChatWindow(QWidget):
         recipient = None if self.current_chat_target == "Global Chat" else self.current_chat_target
         send_chat_message(text, recipient)
         save_message(config.PEER_ID, text, recipient)
-        self.append_to_ui(config.PEER_ID, text)
+
+        timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+        self.append_to_ui(config.PEER_ID, f"[{timestamp}] {text}")
         self.input_box.clear()
 
     def handle_incoming_signal(self, sender, message, recipient):
@@ -487,9 +487,10 @@ class ChatWindow(QWidget):
                 (sender == config.PEER_ID and recipient == self.current_chat_target)
         )
         if show:
-            self.append_to_ui(sender, message)
+            # Generate local timestamp so receiver gets visual updates in real time
+            timestamp = QDateTime.currentDateTime().toString("yyyy-MM-dd hh:mm:ss")
+            self.append_to_ui(sender, f"[{timestamp}] {message}")
         else:
-            # Message is not for the current context, update the peer list to show unread counter
             self.update_peer_list()
 
     def append_to_ui(self, sender, message):
