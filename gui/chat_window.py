@@ -7,7 +7,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QPointF, QRectF
 from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QFont, QPainterPath, QPixmap
 from gui.signals import event_bus
 from network.client import send_chat_message, send_file_attachment
-from storage.database import get_history, save_message, get_all_chat_peers
+from storage.database import get_history, save_message, get_all_chat_peers, get_unread_count, mark_as_read
 import config
 
 
@@ -23,10 +23,10 @@ class PeerChatLogo(QWidget):
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
 
-        blue       = QColor("#89b4fa")
-        dim        = QColor("#313244")
-        dim_line   = QColor("#2a2a3d")
-        text_main  = QColor("#cdd6f4")
+        blue = QColor("#89b4fa")
+        dim = QColor("#313244")
+        dim_line = QColor("#2a2a3d")
+        text_main = QColor("#cdd6f4")
 
         cx, cy = 108, 28
 
@@ -36,7 +36,7 @@ class PeerChatLogo(QWidget):
         p.setBrush(Qt.BrushStyle.NoBrush)
 
         satellites = [(-52, -18), (-52, 18), (52, -18), (52, 18)]
-        anchors    = [(-26, 0),   (-26, 0),  (26, 0),   (26, 0)]
+        anchors = [(-26, 0), (-26, 0), (26, 0), (26, 0)]
         for (sx, sy), (ax, ay) in zip(satellites, anchors):
             p.drawLine(
                 int(cx + ax), int(cy + ay),
@@ -401,13 +401,24 @@ class ChatWindow(QWidget):
             else "Global Chat"
         )
         self.peer_list_widget.clear()
-        self.peer_list_widget.addItem("Global Chat")
+
+        # Add Global Chat with unread counter
+        global_unread = get_unread_count("Global Chat")
+        global_text = "Global Chat"
+        if global_unread > 0:
+            global_text = f"Global Chat ({global_unread})"
+        self.peer_list_widget.addItem(global_text)
+
         online_peers = {
             str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)
         }
         historical_peers = set(get_all_chat_peers())
         for peer in sorted(historical_peers | online_peers):
-            self.peer_list_widget.addItem(peer)
+            unread = get_unread_count(peer)
+            peer_text = peer
+            if unread > 0:
+                peer_text = f"{peer} ({unread})"
+            self.peer_list_widget.addItem(peer_text)
 
         if self.current_chat_target != "Global Chat":
             self.online_indicator.setText(
@@ -415,16 +426,19 @@ class ChatWindow(QWidget):
             )
 
         items = (
-            self.peer_list_widget.findItems("Global Chat", Qt.MatchFlag.MatchExactly)
+            self.peer_list_widget.findItems("Global Chat", Qt.MatchFlag.MatchContains)
             if selected_name == "Global Chat"
-            else self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchExactly)
+            else self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchContains)
         )
         if items:
             self.peer_list_widget.setCurrentItem(items[0])
 
     def switch_chat_context(self, item):
         text = item.text()
-        if text == "Global Chat":
+        # Extract the peer name without the unread counter
+        peer_name = text.split(" (")[0] if " (" in text else text
+
+        if peer_name == "Global Chat":
             self.current_chat_target = "Global Chat"
             self.chat_status_label.setText("Global Chat")
             self.chat_status_sub.setText("Public channel · all peers")
@@ -432,16 +446,21 @@ class ChatWindow(QWidget):
         else:
             from network.discover import peer_ids
             online_peers = {str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)}
-            self.current_chat_target = text
-            self.chat_status_label.setText(text)
+            self.current_chat_target = peer_name
+            self.chat_status_label.setText(peer_name)
             self.chat_status_sub.setText("Private conversation · end-to-end")
-            self.online_indicator.setText("● online" if text in online_peers else "")
+            self.online_indicator.setText("● online" if peer_name in online_peers else "")
+
+        # Mark messages as read when switching to this context
+        mark_as_read(self.current_chat_target)
         self.load_history_from_db()
+        # Update the peer list to remove the unread counter
+        self.update_peer_list()
 
     def load_history_from_db(self):
         self.chat_box.clear()
         target = None if self.current_chat_target == "Global Chat" else self.current_chat_target
-        for sender, message, timestamp in get_history(target):
+        for sender, message, timestamp, is_read in get_history(target):
             self.append_to_ui(sender, f"[{timestamp}] {message}")
 
     def send_message(self):
@@ -463,12 +482,15 @@ class ChatWindow(QWidget):
         if sender == config.PEER_ID:
             return
         show = (
-            (recipient is None and self.current_chat_target == "Global Chat") or
-            (recipient == config.PEER_ID and sender == self.current_chat_target) or
-            (sender == config.PEER_ID and recipient == self.current_chat_target)
+                (recipient is None and self.current_chat_target == "Global Chat") or
+                (recipient == config.PEER_ID and sender == self.current_chat_target) or
+                (sender == config.PEER_ID and recipient == self.current_chat_target)
         )
         if show:
             self.append_to_ui(sender, message)
+        else:
+            # Message is not for the current context, update the peer list to show unread counter
+            self.update_peer_list()
 
     def append_to_ui(self, sender, message):
         is_me = sender == config.PEER_ID

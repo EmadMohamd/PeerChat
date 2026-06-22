@@ -21,9 +21,18 @@ def get_db_connection():
         sender TEXT,
         recipient TEXT,
         message TEXT,
-        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        is_read INTEGER DEFAULT 0
     )
     """)
+
+    # Add is_read column if it doesn't exist (for backward compatibility)
+    try:
+        cursor.execute("ALTER TABLE messages ADD COLUMN is_read INTEGER DEFAULT 0")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+
     conn.commit()
     return conn
 
@@ -61,14 +70,14 @@ def get_history(target_peer=None):
 
     if target_peer is None or target_peer == "Global Chat":
         cursor.execute("""
-            SELECT sender, message, timestamp
+            SELECT sender, message, timestamp, is_read
             FROM messages
             WHERE recipient IS NULL
             ORDER BY id ASC
         """)
     else:
         cursor.execute("""
-            SELECT sender, message, timestamp
+            SELECT sender, message, timestamp, is_read
             FROM messages
             WHERE (sender = ? AND recipient = ?)
                OR (sender = ? AND recipient = ?)
@@ -100,3 +109,54 @@ def get_all_chat_peers():
 
     conn.close()
     return sorted(peers)
+
+
+def get_unread_count(target_peer=None):
+    """
+    Returns the count of unread messages from a specific peer or in Global Chat.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    my_id = config.PEER_ID
+
+    if target_peer is None or target_peer == "Global Chat":
+        cursor.execute("""
+            SELECT COUNT(*) FROM messages
+            WHERE recipient IS NULL AND is_read = 0
+        """)
+    else:
+        cursor.execute("""
+            SELECT COUNT(*) FROM messages
+            WHERE ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))
+            AND is_read = 0
+            AND sender != ?
+        """, (target_peer, my_id, my_id, target_peer, my_id))
+
+    count = cursor.fetchone()[0]
+    conn.close()
+    return count
+
+
+def mark_as_read(target_peer=None):
+    """
+    Marks all messages from a specific peer or in Global Chat as read.
+    """
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    my_id = config.PEER_ID
+
+    if target_peer is None or target_peer == "Global Chat":
+        cursor.execute("""
+            UPDATE messages SET is_read = 1
+            WHERE recipient IS NULL AND is_read = 0
+        """)
+    else:
+        cursor.execute("""
+            UPDATE messages SET is_read = 1
+            WHERE ((sender = ? AND recipient = ?) OR (sender = ? AND recipient = ?))
+            AND is_read = 0
+            AND sender != ?
+        """, (target_peer, my_id, my_id, target_peer, my_id))
+
+    conn.commit()
+    conn.close()

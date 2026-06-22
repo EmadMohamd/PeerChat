@@ -94,24 +94,8 @@ The interface has been fully updated to a sleek, modern visual aesthetic based o
 
 # Architecture
 
-```
-                ┌───────────────┐
-                │   Peer A      │
-                └──────┬────────┘
-                       │
-         ┌─────────────┼─────────────┐
-         │                           │
-┌────────▼────────┐         ┌────────▼────────┐
-│    Peer B       │         │    Peer C       │
-└────────┬────────┘         └────────┬────────┘
-         │                           │
-         └─────────────┬─────────────┘
-                       │
-                ┌──────▼────────┐
-                │    Peer D     │
-                └───────────────┘
 
-```
+![Peer_Discovery_Flow](assets/discovery_flow.gif)
 
 Each peer contains:
 
