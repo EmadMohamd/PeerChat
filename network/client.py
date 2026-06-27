@@ -1,6 +1,11 @@
-import socket, threading, time, config, os
+import socket
+import threading
+import time
+import config
+import os
 import random
 import base64
+import shutil
 from network.protocol import create_packet
 from network.discover import connected_peers, known_peers, BOOTSTRAP_PEERS, add_known_peer, network_lock
 
@@ -123,14 +128,28 @@ def send_file_attachment(file_path, target_peer_id=None):
     import config
 
     if not os.path.exists(file_path):
+        print(f"[CLIENT] File targeted for pipeline broadcast not found: {file_path}")
         return None, None
 
     file_name = os.path.basename(file_path)
 
+    # Unified Media Optimization: Force-copy asset locally for immediate sender visual rendering
+    os.makedirs("downloads", exist_ok=True)
+    local_dest = os.path.join("downloads", file_name)
+    if os.path.abspath(file_path) != os.path.abspath(local_dest):
+        try:
+            shutil.copy2(file_path, local_dest)
+        except Exception as e:
+            print(f"[CLIENT] Sender mirroring copy fallback failed: {e}")
+
     # Read and encode file to base64 string
-    with open(file_path, "rb") as f:
-        file_bytes = f.read()
-    base64_data = base64.b64encode(file_bytes).decode('utf-8')
+    try:
+        with open(file_path, "rb") as f:
+            file_bytes = f.read()
+        base64_data = base64.b64encode(file_bytes).decode('utf-8')
+    except Exception as e:
+        print(f"[CLIENT] Critical attachment file streaming failed: {e}")
+        return None, None
 
     # Generate tracking unique hash for delivery indicators
     msg_id = f"{config.PEER_ID}_{time.time_ns()}"
@@ -163,7 +182,7 @@ def send_file_attachment(file_path, target_peer_id=None):
             except:
                 pass
 
-    return file_name, msg_id  # Return to GUI for local rendering and status tracking
+    return file_name, msg_id  # Return clean metadata back to UI layers
 
 
 def start_discovery_loop(receive_loop):
