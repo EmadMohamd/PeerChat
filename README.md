@@ -15,14 +15,13 @@ The system supports:
 
 # Releases & Downloads
 
-## 🚀 v1.0.0 — The Initial Decentralized Release
+## 🚀 v1.1.0 — The Multimedia Upgrade
 
-This marks the first stable release of PeerChat, moving the project from a command-line proof-of-concept to a fully-realized desktop application with a modern graphical interface.
-
+This release brings integrated voice messaging, media processing capabilities, and live playback heads right into the decentralized interface layout.
 
 ### Binary Downloads
 
-* 🖥️ **Windows (x64):** `peerchat.exe` 
+* 🖥️ **Windows (x64):** `peerchat.exe`
 
 > ⚠️ **Note on Build Generation:** If compiling from source using PyInstaller, use the following command to match the official release naming convention:
 > ```bash
@@ -63,11 +62,12 @@ This marks the first stable release of PeerChat, moving the project from a comma
 
 * Direct private messaging between peers
 * Global broadcast messaging to all connected peers
-* File attachments with automatic download handling
+* **Voice Messaging:** Dedicated audio capture state machine (`🎤`/`🛑`) converting hardware input into wave blocks on the fly
+* File attachments with automatic download handling and live rendering
 * JSON-based message protocol for structured routing
-* Local persistence of all messages and file references
+* Local persistence of all messages, audio tracks, and file references via SQLite
 * Timestamped message history for accurate chronological reconstruction
-* Received files are automatically saved to the downloads/ directory
+* Received files and voice notes are automatically saved to the `downloads/` directory
 
 ---
 
@@ -77,32 +77,28 @@ The interface has been fully updated to a sleek, modern visual aesthetic based o
 
 ### Configuration Window (Startup Screen)
 
-* **Glitch-Free UI Rendering:** 
-* **Modern Geometric Aesthetics:** 
-* **Validation Subsystem:** 
+* **Glitch-Free UI Rendering:** Fixed setup sizing prevents scaling artifact flickering.
+* **Modern Geometric Aesthetics:** High-contrast color assignments utilizing a custom vector layout engine.
+* **Validation Subsystem:** Automated networking field sanity checkers before binding.
 
 ### Main Chat Window
 
-* **Enhanced Peer List:**
-* **Integrated Control Panels**
-* **Real-Time Indicators:** Real-time online/offline peer visibility tracking
-* **Online (currently connected)**
+* **Enhanced Peer List:** 
+* **Integrated Control Panels:** 
+* **Real-Time Indicators:** 
+* **Audio Execution HUD:**
 * **Message delivery status indicators (✓ / ✓✓)**
-
-
 
 ---
 
 # Architecture
-
-
-![Peer_Discovery_Flow](assets/discovery_flow.gif)
 
 Each peer contains:
 
 * Configuration interface launcher or CLI interceptor
 * Listener server & outgoing client connector
 * Message handler & peer discovery engine
+* **Audio Capture & Rendering Engines (`PyQt6.QtMultimedia` pipeline)**
 * Authentication layer (RSA challenge-response)
 * Local SQLite database with timestamped history
 * PyQt6 frontend with real-time updates
@@ -150,7 +146,9 @@ If `recipient` is `null`, the message is treated as a global broadcast.
 
 ---
 
-## File Transfer Packet
+## File & Voice Note Transfer Packet
+
+Voice notes take advantage of the structural file transport layout, creating temporary `.wav` tracking binaries before running them through the network encoder wrapper:
 
 ```json
 {
@@ -158,8 +156,8 @@ If `recipient` is `null`, the message is treated as a global broadcast.
   "data": {
     "sender": "Alice-a1b2c3d4",
     "recipient": "Bob-e5f6g7h8",
-    "file_name": "document.pdf",
-    "payload": "BASE64_ENCODED_DATA..."
+    "file_name": "vnote_1719520109.wav",
+    "payload": "BASE64_ENCODED_AUDIO_DATA..."
   }
 }
 
@@ -185,12 +183,12 @@ peerchat/
 │   ├── Alice_private.pem
 │   └── Alice_public.pem
 │
-├── downloads/          # Received file attachments
+├── downloads/          # Received file attachments and voice notes (.wav, .mp3, etc.)
 │
 ├── gui/
 │   ├── app.py          # GUI launcher
 │   ├── config_window.py# Smooth anti-flicker configuration screen
-│   ├── chat_window.py  # UI + message rendering logic
+│   ├── chat_window.py  # UI, rich text media playback triggers & message rendering logic
 │   └── signals.py      # Event bus system
 │
 ├── network/
@@ -212,6 +210,8 @@ peerchat/
 # Running PeerChat from Source
 
 ## Install Dependencies
+
+To run PeerChat with full multimedia capture and system audio playback support, ensure you have the updated requirements installed:
 
 ```bash
 pip install pyqt6 cryptography
@@ -248,6 +248,7 @@ python main.py 9000 Bootstrap_node
 python main.py 9001 Bootstrap_node_1
 
 ```
+
 ### Terminal 3
 
 ```bash
@@ -255,7 +256,7 @@ python main.py 9002 Bootstrap_node_2
 
 ```
 
-And then after initializing the Bootstrap peers you can start your peers
+And then after initializing the Bootstrap peers you can start your peers:
 
 ### Terminal 4
 
@@ -263,6 +264,7 @@ And then after initializing the Bootstrap peers you can start your peers
 python main.py <Port> <Username>
 
 ```
+
 ---
 
 # Bootstrap Peers Configuration
@@ -280,7 +282,7 @@ BOOTSTRAP_PEERS = [
 
 ## LAN Setup
 
-For local network deployment, replace IPs with the LAN address of your machines with these or you can choose your desired ip's:
+For local network deployment, replace IPs with the LAN address of your machines with these or you can choose your desired IPs:
 
 ```python
 BOOTSTRAP_PEERS = [
