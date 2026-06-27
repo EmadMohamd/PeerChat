@@ -2,8 +2,7 @@ import socket, threading, time, config, os
 import random
 import base64
 from network.protocol import create_packet
-from network.discover import connected_peers, known_peers, BOOTSTRAP_PEERS, add_known_peer, network_lock
-
+from network.discover import connected_peers, known_peers, get_bootstrap_peers, add_known_peer, network_lock
 DISCOVERY_INTERVAL = 30
 
 MAX_PEERS = 12
@@ -171,7 +170,7 @@ def start_discovery_loop(receive_loop):
         # ---------------------------------
         # Add bootstrap peers once
         # ---------------------------------
-        for ip, port in BOOTSTRAP_PEERS:
+        for ip, port in get_bootstrap_peers():
             # FIX 4: Ensure bootstrap filters skip self if bootstrap addresses match your own LAN IP
             if int(port) == int(config.PORT) and ip in ("127.0.0.1", MY_LAN_IP):
                 continue

@@ -4,15 +4,16 @@ from PyQt6.QtWidgets import (
     QPushButton, QLabel, QFrame, QGraphicsOpacityEffect
 )
 from PyQt6.QtCore import Qt, QPropertyAnimation, QEasingCurve, QTimer
+import config
 
 
 class ConfigWindow(QWidget):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("PeerChat — Configuration")
-        self.resize(640, 680)
-        self.setMinimumSize(560, 600)
-        self.setMaximumSize(780, 800)
+        self.resize(640, 780)  # Expanded height slightly for the new field
+        self.setMinimumSize(560, 680)
+        self.setMaximumSize(780, 900)
 
         self.username = None
         self.port = None
@@ -121,14 +122,12 @@ class ConfigWindow(QWidget):
         outer = QVBoxLayout(self)
         outer.setContentsMargins(28, 28, 28, 28)
 
-        # ── Card ───────────────────────────────────────────────────
         card = QFrame()
         card.setObjectName("MainCard")
         cl = QVBoxLayout(card)
-        cl.setContentsMargins(52, 48, 52, 48)
+        cl.setContentsMargins(52, 40, 52, 40)
         cl.setSpacing(0)
 
-        # ── Badge ──────────────────────────────────────────────────
         badge_row = QHBoxLayout()
         badge = QLabel("P2P NODE")
         badge.setObjectName("Badge")
@@ -136,29 +135,25 @@ class ConfigWindow(QWidget):
         badge_row.addWidget(badge)
         badge_row.addStretch()
         cl.addLayout(badge_row)
-        cl.addSpacing(28)
+        cl.addSpacing(20)
 
-        # ── Title ──────────────────────────────────────────────────
         title = QLabel("PeerChat")
         title.setObjectName("MainTitle")
 
-        subtitle = QLabel(
-            "Configure your network identity and listening port"
-        )
+        subtitle = QLabel("Configure your network identity, listening port, and mesh targets")
         subtitle.setObjectName("Subtitle")
         subtitle.setWordWrap(True)
 
         cl.addWidget(title)
-        cl.addSpacing(10)
+        cl.addSpacing(6)
         cl.addWidget(subtitle)
-        cl.addSpacing(36)
+        cl.addSpacing(24)
 
-        # ── Divider ────────────────────────────────────────────────
         divider = QFrame()
         divider.setObjectName("Divider")
         divider.setFrameShape(QFrame.Shape.HLine)
         cl.addWidget(divider)
-        cl.addSpacing(36)
+        cl.addSpacing(24)
 
         # ── Username field ─────────────────────────────────────────
         user_label = QLabel("USERNAME")
@@ -166,11 +161,10 @@ class ConfigWindow(QWidget):
         self.username_input = QLineEdit()
         self.username_input.setMinimumHeight(52)
         self.username_input.setPlaceholderText("e.g. alice_node")
-
         cl.addWidget(user_label)
         cl.addSpacing(8)
         cl.addWidget(self.username_input)
-        cl.addSpacing(24)
+        cl.addSpacing(20)
 
         # ── Port field ─────────────────────────────────────────────
         port_label = QLabel("LISTENING PORT")
@@ -178,11 +172,23 @@ class ConfigWindow(QWidget):
         self.port_input = QLineEdit()
         self.port_input.setMinimumHeight(52)
         self.port_input.setPlaceholderText("1024 – 65535")
-
         cl.addWidget(port_label)
         cl.addSpacing(8)
         cl.addWidget(self.port_input)
         cl.addSpacing(20)
+
+        # ── Bootstrap Peers Field ──────────────────────────────────
+        bootstrap_label = QLabel("BOOTSTRAP PEERS")
+        bootstrap_label.setObjectName("FieldLabel")
+        self.bootstrap_input = QLineEdit()
+        self.bootstrap_input.setMinimumHeight(52)
+        # Default fallback values suggested in placeholder layout
+        self.bootstrap_input.setPlaceholderText("127.0.0.1:9000, 127.0.0.1:9001")
+        # Pre-populate with typical setup for quick clicks
+        self.bootstrap_input.setText("127.0.0.1:9000, 127.0.0.1:9001, 127.0.0.1:9002")
+        cl.addWidget(bootstrap_label)
+        cl.addSpacing(8)
+        cl.addWidget(self.bootstrap_input)
 
         # ── Error ──────────────────────────────────────────────────
         self.error_label = QLabel("")
@@ -190,7 +196,7 @@ class ConfigWindow(QWidget):
         self.error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.error_label.setMinimumHeight(22)
         cl.addWidget(self.error_label)
-        cl.addSpacing(24)
+        cl.addSpacing(16)
 
         # ── Launch button ──────────────────────────────────────────
         self.launch_btn = QPushButton("Launch Session →")
@@ -202,7 +208,6 @@ class ConfigWindow(QWidget):
 
         outer.addWidget(card)
 
-    # ── Fade-in ────────────────────────────────────────────────────
     def animate_in(self):
         self.opacity_effect = QGraphicsOpacityEffect(self)
         self.setGraphicsEffect(self.opacity_effect)
@@ -214,7 +219,6 @@ class ConfigWindow(QWidget):
         self._anim.setEasingCurve(QEasingCurve.Type.OutCubic)
         self._anim.start()
 
-    # ── Shake on error ─────────────────────────────────────────────
     def shake_error(self):
         original_x = self.x()
         offsets = [6, -6, 4, -4, 2, -2, 0]
@@ -223,10 +227,10 @@ class ConfigWindow(QWidget):
             QTimer.singleShot(delay, lambda o=offset: self.move(original_x + o, self.y()))
             delay += 40
 
-    # ── Validation ─────────────────────────────────────────────────
     def validate_and_submit(self):
         user_text = self.username_input.text().strip()
         port_text = self.port_input.text().strip()
+        boot_text = self.bootstrap_input.text().strip()
 
         if not user_text:
             self.error_label.setText("⚠  Username cannot be empty.")
@@ -249,6 +253,32 @@ class ConfigWindow(QWidget):
             self.port_input.setFocus()
             self.shake_error()
             return
+
+        # ── Parse and Validate Dynamic Bootstrap Entry Nodes ──
+        parsed_bootstraps = []
+        if boot_text:
+            # Split items by comma delimiters
+            raw_entries = [entry.strip() for entry in boot_text.split(",") if entry.strip()]
+            for entry in raw_entries:
+                if ":" not in entry:
+                    self.error_label.setText(f"⚠  Invalid bootstrap entry '{entry}'. Format must be IP:PORT.")
+                    self.bootstrap_input.setFocus()
+                    self.shake_error()
+                    return
+                ip, p_str = entry.rsplit(":", 1)
+                try:
+                    p_num = int(p_str)
+                    if not (1 <= p_num <= 65535):
+                        raise ValueError()
+                    parsed_bootstraps.append((ip.strip(), p_num))
+                except ValueError:
+                    self.error_label.setText(f"⚠  Invalid port assignment inside tracking entity: '{entry}'")
+                    self.bootstrap_input.setFocus()
+                    self.shake_error()
+                    return
+
+        # Commit runtime state variables out to unified system parameters
+        config.BOOTSTRAP_PEERS = parsed_bootstraps
 
         self.error_label.setText("")
         self.username = user_text

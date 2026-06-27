@@ -2,6 +2,7 @@ import sys
 import threading
 import time
 import socket
+import subprocess
 from PyQt6.QtWidgets import QApplication
 from pathlib import Path
 import config
@@ -9,7 +10,7 @@ from network.server import start_server
 from network.client import init_client_keys
 from security.keys import ensure_keys_exist
 from gui.app import start_gui
-from gui.config_window import ConfigWindow  # IMPORTED: New isolated layout module
+from gui.config_window import ConfigWindow
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -36,37 +37,50 @@ def start_network(my_port):
     print(f"[MAIN] Background peer discovery system fully deployed.")
 
 
+def spawn_background_bootstraps():
+    """Spawns dedicated bootstrap nodes quietly behind the scenes if not already running."""
+    print("[AUTOMATION] Checking and deploying background bootstrap cluster...")
+    ports_and_names = [(9000, "Bootstrap_node_1"), (9001, "Bootstrap_node_2"), (9002, "Bootstrap_node_3")]
+
+    for port, name in ports_and_names:
+        # Check if the port is already taken to avoid double-launch errors
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                # Port is free, meaning this bootstrap isn't running yet. Spawn it!
+                subprocess.Popen([sys.executable, __file__, str(port), name])
+                print(f"[AUTOMATION] Spawned background handler: {name} on port {port}")
+                time.sleep(0.2)  # Slight staggering gap
+            except socket.error:
+                # Port is busy, likely already running or active
+                print(f"[AUTOMATION] Port {port} is occupied. Skipping auto-spawn for {name}.")
+
+
 if __name__ == "__main__":
-    # Create the single global Qt Application instance needed for windows
     app = QApplication(sys.argv)
 
-    # Check if configurations are missing from sys.argv CLI parsing
     if len(sys.argv) < 3:
-        # Load the newly separated interactive GUI settings prompt
+        # Only run background processes if we are starting a normal client window
+        spawn_background_bootstraps()
+        time.sleep(0.5)
+
         config_screen = ConfigWindow()
         config_screen.show()
-
-        # Blocks and processes the execution window safely until closed
         app.exec()
 
-        # If the user closed out of configuration window without submitting data, abort cleanly
         if config_screen.username is None or config_screen.port is None:
             print("[MAIN] Configuration setup cancelled. Exiting.")
             sys.exit(0)
 
-        # Extract variables from state container objects
         runtime_port = config_screen.port
         runtime_user = config_screen.username
     else:
-        # Fallback implementation directly supports standard CLI arg bindings
         runtime_port = int(sys.argv[1])
         runtime_user = sys.argv[2]
 
-    # Assign state parameters over to static system scope variables
     config.PORT = runtime_port
     config.USERNAME = runtime_user
 
-    # Storing node structural ID parameters safely
     node_id = ensure_keys_exist()
     config.PEER_ID = node_id
 
@@ -84,5 +98,12 @@ if __name__ == "__main__":
     network_thread = threading.Thread(target=start_network, args=(config.PORT,), daemon=True)
     network_thread.start()
 
-    # Pass primary application execution over to the main GUI chat dashboard window context
-    start_gui()
+    # If this is an auto-spawned bootstrap node, do not render a GUI window!
+    if "Bootstrap_node" in config.USERNAME:
+        print(f"[BOOTSTRAP] Dedicated routing node '{config.USERNAME}' online. Keeping socket alive.")
+        # Infinite blocking loop for terminal nodes so they stay running
+        while True:
+            time.sleep(3600)
+    else:
+        # Pass primary application execution over to the main chat dashboard
+        start_gui()

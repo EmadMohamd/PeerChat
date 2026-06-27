@@ -10,8 +10,6 @@ known_peers = set()
 connected_peers = {}  # {(ip, port): socket}
 peer_ids = {}
 
-
-# FIX 1: Dynamically track this machine's LAN IP to prevent self-targeting
 def get_local_ip():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
@@ -23,20 +21,19 @@ def get_local_ip():
         s.close()
     return local_ip
 
-
 MY_LAN_IP = get_local_ip()
 
-BOOTSTRAP_PEERS = [("192.168.1.2", 9000), ("192.168.1.3", 9001), ("127.0.0.1", 9002)]
-
+# --- THE FIX: Point directly to the configuration state storage variable ---
+def get_bootstrap_peers():
+    """Returns runtime defined bootstrap parameters gathered on configuration launch."""
+    return getattr(config, 'BOOTSTRAP_PEERS', [("127.0.0.1", 9000), ("127.0.0.1", 9001)])
 
 def add_known_peer(ip, port):
-    # FIX 3: Prevent adding yourself to the known peer list via localhost OR your active LAN IP
     if int(port) == int(config.PORT) and ip in ("127.0.0.1", MY_LAN_IP):
         return
 
     with network_lock:
         known_peers.add((ip, int(port)))
-
 
 def register_authenticated_connection(ip, port, sock, peer_id):
     with network_lock:
@@ -54,7 +51,6 @@ def register_authenticated_connection(ip, port, sock, peer_id):
         peer_ids[sock] = peer_id
     add_known_peer(ip, port)
 
-
 def remove_connection(sock):
     with network_lock:
         try:
@@ -66,10 +62,8 @@ def remove_connection(sock):
         except:
             pass
 
-
 def get_all_connections():
     with network_lock: return list(connected_peers.values())
-
 
 def get_authenticated_peer_addresses():
     with network_lock: return list(connected_peers.keys())

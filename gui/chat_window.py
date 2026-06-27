@@ -396,42 +396,34 @@ class ChatWindow(QWidget):
             self.append_to_ui(config.PEER_ID, f"[{display_msg} {timestamp}]", msg_id=msg_id, initial_status="✓")
 
     def update_peer_list(self):
-        from network.discover import peer_ids
+        from network.discover import peer_ids, get_bootstrap_peers
         current_item = self.peer_list_widget.currentItem()
-        selected_name = (
-            current_item.text()
-            if current_item and current_item.text() != "Global Chat"
-            else "Global Chat"
-        )
+        selected_name = current_item.text().split(" (")[0] if current_item else "Global Chat"
         self.peer_list_widget.clear()
 
         global_unread = get_unread_count("Global Chat")
-        global_text = "Global Chat"
-        if global_unread > 0:
-            global_text = f"Global Chat ({global_unread})"
+        global_text = f"Global Chat ({global_unread})" if global_unread > 0 else "Global Chat"
         self.peer_list_widget.addItem(global_text)
 
-        online_peers = {
-            str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)
-        }
+        # Get the addresses of the configured bootstrap nodes
+        bootstrap_addresses = get_bootstrap_peers()
+
+        online_peers = {str(pid) for pid in peer_ids.values() if str(pid) != str(config.PEER_ID)}
         historical_peers = set(get_all_chat_peers())
+
         for peer in sorted(historical_peers | online_peers):
+            # ─── THE FIX: Hide dedicated bootstrap nodes ───
+            if "Bootstrap_node" in peer:
+                continue
+
             unread = get_unread_count(peer)
-            peer_text = peer
-            if unread > 0:
-                peer_text = f"{peer} ({unread})"
+            peer_text = f"{peer} ({unread})" if unread > 0 else peer
             self.peer_list_widget.addItem(peer_text)
 
         if self.current_chat_target != "Global Chat":
-            self.online_indicator.setText(
-                "● online" if self.current_chat_target in online_peers else ""
-            )
+            self.online_indicator.setText("● online" if self.current_chat_target in online_peers else "")
 
-        items = (
-            self.peer_list_widget.findItems("Global Chat", Qt.MatchFlag.MatchContains)
-            if selected_name == "Global Chat"
-            else self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchContains)
-        )
+        items = self.peer_list_widget.findItems(selected_name, Qt.MatchFlag.MatchContains)
         if items:
             self.peer_list_widget.setCurrentItem(items[0])
 
