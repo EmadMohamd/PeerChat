@@ -93,6 +93,8 @@ The interface has been fully updated to a sleek, modern visual aesthetic based o
 
 # Architecture
 
+![Peer_Discovery_Flow](assets/Peer_Discovery.png)
+
 Each peer contains:
 
 * Configuration interface launcher or CLI interceptor
@@ -109,20 +111,7 @@ Each peer contains:
 
 PeerChat uses cryptographic verification instead of passwords.
 
-```
-1. Connect
-   ↓
-2. Exchange public keys (identity packet)
-   ↓
-3. Generate random challenge
-   ↓
-4. Sign challenge with private key
-   ↓
-5. Verify signature using public key
-   ↓
-6. Authenticated communication begins
-
-```
+![Peer_Discovery_Flow](assets/auth_flow.png)
 
 ---
 
