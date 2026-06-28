@@ -62,7 +62,6 @@ This release brings integrated voice messaging, media processing capabilities, a
 
 * Direct private messaging between peers
 * Global broadcast messaging to all connected peers
-* **Voice Messaging:** Dedicated audio capture state machine (`🎤`/`🛑`) converting hardware input into wave blocks on the fly
 * File attachments with automatic download handling and live rendering
 * JSON-based message protocol for structured routing
 * Local persistence of all messages, audio tracks, and file references via SQLite
@@ -77,9 +76,9 @@ The interface has been fully updated to a sleek, modern visual aesthetic based o
 
 ### Configuration Window (Startup Screen)
 
-* **Glitch-Free UI Rendering:** Fixed setup sizing prevents scaling artifact flickering.
-* **Modern Geometric Aesthetics:** High-contrast color assignments utilizing a custom vector layout engine.
-* **Validation Subsystem:** Automated networking field sanity checkers before binding.
+* **Glitch-Free UI Rendering:** 
+* **Modern Geometric Aesthetics:** 
+* **Automated networking field sanity checkers before binding.**
 
 ### Main Chat Window
 
@@ -100,7 +99,7 @@ Each peer contains:
 * Configuration interface launcher or CLI interceptor
 * Listener server & outgoing client connector
 * Message handler & peer discovery engine
-* **Audio Capture & Rendering Engines (`PyQt6.QtMultimedia` pipeline)**
+* Audio Capture & Rendering Engines (`PyQt6.QtMultimedia` pipeline)
 * Authentication layer (RSA challenge-response)
 * Local SQLite database with timestamped history
 * PyQt6 frontend with real-time updates
