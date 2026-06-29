@@ -110,7 +110,7 @@ Each peer contains:
 
 PeerChat uses cryptographic verification instead of passwords.
 
-![Peer_Discovery_Flow](assets/auth_flow.png)
+![Peer_Auth_Flow](assets/auth_flow.png)
 
 ---
 
