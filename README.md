@@ -203,6 +203,7 @@ To run PeerChat with full multimedia capture and system audio playback support, 
 
 ```bash
 pip install pyqt6 cryptography
+pip install --upgrade PyQt6
 
 ```
 
